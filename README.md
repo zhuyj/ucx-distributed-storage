@@ -11,3 +11,7 @@ The steps to compile and run this ucx distributed storage app:
    "
 
 4. To now, the ucx is ready. We can complile ucx distributed storage app;
+
+5. git clone this-github-app
+
+6. make UCX_INSTALL_DIR=/ucx-install-debug/
