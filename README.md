@@ -15,3 +15,13 @@ The steps to compile and run this ucx distributed storage app:
 5. git clone this-github-app
 
 6. make UCX_INSTALL_DIR=/ucx-install-debug/
+
+7. run this ucx distributed storage app:
+
+   Server <--------> Client1
+   ^   ^^
+   |   ||----------> Client2
+   |   |-----------> ClientN
+   |---------------> Clinet100
+
+   The Server and Clients work very well.
