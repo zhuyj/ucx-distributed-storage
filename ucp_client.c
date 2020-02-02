@@ -14,16 +14,6 @@ const char test_message[]   = "UCX Simulated Distributed Storage Application";
 static uint16_t server_port = DEFAULT_PORT;
 
 /**
- * Server's application context to be used in the user's connection request
- * callback.
- * It holds the server's data worker which is created during the init stage.
- */
-typedef struct ucx_server_ctx {
-    ucp_worker_h data_worker;
-} ucx_server_ctx_t;
-
-
-/**
  * Stream request context. Holds a value to indicate whether or not the
  * request is completed.
  */
@@ -129,12 +119,7 @@ static ucs_status_t start_client(ucp_worker_h ucp_worker, const char *ip,
  */
 static void print_result(int is_server, char *recv_message)
 {
-    if (is_server) {
-        printf("UCX data message was received\n");
-        printf("\n\n----- UCP TEST SUCCESS -------\n\n");
-        printf("%s", recv_message);
-        printf("\n\n------------------------------\n\n");
-    } else {
+    if (!is_server) {
         printf("\n\n-----------------------------------------\n\n");
         printf("Client sent message: \n%s.\nlength: %ld\n",
                test_message, TEST_STRING_LEN);
@@ -268,6 +253,20 @@ static int parse_cmd(int argc, char *const argv[], char **server_addr, char **li
     return 0;
 }
 
+static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep,
+                                       int is_server)
+{
+    int ret;
+
+    /* Client-Server communication via Stream API */
+    ret = send_recv_stream(worker, ep, is_server);
+
+    /* Close the endpoint to the peer */
+    ep_close(worker, ep);
+
+    return ret;
+}
+
 /**
  * Create a ucp worker on the given ucp context.
  */
@@ -288,6 +287,26 @@ static int init_worker(ucp_context_h ucp_context, ucp_worker_h *ucp_worker)
         ret = -1;
     }
 
+    return ret;
+}
+
+static int run_client(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
+                      char *server_addr)
+{
+    ucp_ep_h     client_ep;
+    ucs_status_t status;
+    int          ret;
+
+    status = start_client(ucp_worker, server_addr, &client_ep);
+    if (status != UCS_OK) {
+        fprintf(stderr, "failed to start client (%s)\n", ucs_status_string(status));
+        ret = -1;
+        goto out;
+    }
+
+    ret = client_server_communication(ucp_worker, client_ep, 0);
+
+out:
     return ret;
 }
 
@@ -335,17 +354,13 @@ err:
 
 int main(int argc, char **argv)
 {
-    //ucx_server_ctx_t context;
     char *server_addr = NULL;
     char *listen_addr = NULL;
     int ret;
 
     /* UCP objects */
     ucp_context_h ucp_context;
-    //ucp_listener_h listener;
-    ucp_worker_h ucp_worker;
-    ucs_status_t status;
-    ucp_ep_h ep;
+    ucp_worker_h  ucp_worker;
 
     ret = parse_cmd(argc, argv, &server_addr, &listen_addr);
     if (ret != 0) {
@@ -358,22 +373,13 @@ int main(int argc, char **argv)
         goto err;
     }
 
-    /* Client side */
-    status = start_client(ucp_worker, server_addr, &ep);
-    if (status != UCS_OK) {
-        fprintf(stderr, "failed to start client\n");
-        goto err_worker;
+    /* Client-Server initialization */
+    if (server_addr != NULL) {
+        /* Client side */
+        ret = run_client(ucp_context, ucp_worker, server_addr);
     }
 
-    /* Client-Server communication via Stream API */
-    ret = send_recv_stream(ucp_worker, ep, 0);
-
-    /* Close the endpoint to the server */
-    ep_close(ucp_worker, ep);
-
-err_worker:
     ucp_worker_destroy(ucp_worker);
-
     ucp_cleanup(ucp_context);
 err:
     return ret;
