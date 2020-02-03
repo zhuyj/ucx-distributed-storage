@@ -117,14 +117,12 @@ static ucs_status_t start_client(ucp_worker_h ucp_worker, const char *ip,
  * Print the received message on the server side or the sent data on the client
  * side.
  */
-static void print_result(int is_server, char *recv_message)
+static void print_result(char *recv_message)
 {
-    if (!is_server) {
-        printf("\n\n-----------------------------------------\n\n");
-        printf("Client sent message: \n%s.\nlength: %ld\n",
-               test_message, TEST_STRING_LEN);
-        printf("\n-----------------------------------------\n\n");
-    }
+    printf("\n\n-----------------------------------------\n\n");
+    printf("Client sent message: \n%s.\nlength: %ld\n",
+           test_message, TEST_STRING_LEN);
+    printf("\n-----------------------------------------\n\n");
 }
 
 /**
@@ -175,12 +173,11 @@ static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
     }
     status = request_wait(ucp_worker, request);
     if (status != UCS_OK){
-        fprintf(stderr, "unable to %s UCX message (%s)\n",
-                is_server ? "receive": "send",
+        fprintf(stderr, "unable to send UCX message (%s)\n",
                 ucs_status_string(status));
         ret = -1;
     } else {
-        print_result(is_server, recv_message);
+        print_result(recv_message);
     }
 
     return ret;
