@@ -83,14 +83,12 @@ void set_connect_addr(const char *address_str, struct sockaddr_in *connect_addr)
  * Print the received message on the server side or the sent data on the client
  * side.
  */
-static void print_result(int is_server, char *recv_message)
+static void print_result(char *recv_message)
 {
-    if (is_server) {
-        printf("UCX data message was received\n");
-        printf("\n\n----- UCP SERVER RECEIVED -------\n\n");
-        printf("%s", recv_message);
-        printf("\n\n------------------------------\n\n");
-    }
+    printf("UCX data message was received\n");
+    printf("\n\n----- UCP SERVER RECEIVED -------\n\n");
+    printf("%s", recv_message);
+    printf("\n\n------------------------------\n\n");
 }
 
 /**
@@ -149,7 +147,7 @@ static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
                 ucs_status_string(status));
         ret = -1;
     } else {
-        print_result(is_server, recv_message);
+        print_result(recv_message);
     }
 
     return ret;
