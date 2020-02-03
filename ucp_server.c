@@ -124,7 +124,7 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
  * The client sends a message to the server and waits until the send it completed.
  * The server receives a message from the client and waits for its completion.
  */
-static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
+static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
     char recv_message[TEST_STRING_LEN]= "";
     test_req_t *request;
@@ -132,18 +132,15 @@ static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
     int ret = 0;
     ucs_status_t status;
 
-    if (is_server) {
-        /* Server receives a message from the client using the stream API */
-        request = ucp_stream_recv_nb(ep, &recv_message, 1,
-                                     ucp_dt_make_contig(TEST_STRING_LEN),
-                                     stream_recv_cb, &length,
-                                     UCP_STREAM_RECV_FLAG_WAITALL);
-    }
+    /* Server receives a message from the client using the stream API */
+    request = ucp_stream_recv_nb(ep, &recv_message, 1,
+                                 ucp_dt_make_contig(TEST_STRING_LEN),
+                                 stream_recv_cb, &length,
+                                 UCP_STREAM_RECV_FLAG_WAITALL);
 
     status = request_wait(ucp_worker, request);
     if (status != UCS_OK){
-        fprintf(stderr, "unable to %s UCX message (%s)\n",
-                is_server ? "receive": "send",
+        fprintf(stderr, "unable to receive UCX message (%s)\n",
                 ucs_status_string(status));
         ret = -1;
     } else {
@@ -260,13 +257,12 @@ static char* sockaddr_get_port_str(const struct sockaddr_storage *sock_addr,
     }
 }
 
-static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep,
-                                       int is_server)
+static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep)
 {
     int ret;
 
     /* Client-Server communication via Stream API */
-    ret = send_recv_stream(worker, ep, is_server);
+    ret = send_recv_stream(worker, ep);
 
     /* Close the endpoint to the peer */
     ep_close(worker, ep);
@@ -447,7 +443,7 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
             goto err_listener;
         }
 
-        client_server_communication(ucp_data_worker, server_ep, 1);
+        client_server_communication(ucp_data_worker, server_ep);
 
         /* Reinitialize the server's context to be used for the next client */
         context.conn_request = NULL;
