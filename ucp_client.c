@@ -158,19 +158,18 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
  * The client sends a message to the server and waits until the send it completed.
  * The server receives a message from the client and waits for its completion.
  */
-static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
+static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
     char recv_message[TEST_STRING_LEN]= "";
     test_req_t *request;
     int ret = 0;
     ucs_status_t status;
 
-    if (!is_server) {
-        /* Client sends a message to the server using the stream API */
-        request = ucp_stream_send_nb(ep, test_message, 1,
-                                     ucp_dt_make_contig(TEST_STRING_LEN),
-                                     stream_send_cb, 0);
-    }
+    /* Client sends a message to the server using the stream API */
+    request = ucp_stream_send_nb(ep, test_message, 1,
+                                 ucp_dt_make_contig(TEST_STRING_LEN),
+                                 stream_send_cb, 0);
+
     status = request_wait(ucp_worker, request);
     if (status != UCS_OK){
         fprintf(stderr, "unable to send UCX message (%s)\n",
@@ -250,13 +249,12 @@ static int parse_cmd(int argc, char *const argv[], char **server_addr, char **li
     return 0;
 }
 
-static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep,
-                                       int is_server)
+static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep)
 {
     int ret;
 
     /* Client-Server communication via Stream API */
-    ret = send_recv_stream(worker, ep, is_server);
+    ret = send_recv_stream(worker, ep);
 
     /* Close the endpoint to the peer */
     ep_close(worker, ep);
@@ -301,7 +299,7 @@ static int run_client(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
         goto out;
     }
 
-    ret = client_server_communication(ucp_worker, client_ep, 0);
+    ret = client_server_communication(ucp_worker, client_ep);
 
 out:
     return ret;
