@@ -167,7 +167,7 @@ static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
 
     /* Client sends a message to the server using the stream API */
     request = ucp_stream_send_nb(ep, test_message, 1,
-                                 ucp_dt_make_contig(TEST_STRING_LEN),
+                                 ucp_dt_make_contig(56),
                                  stream_send_cb, 0);
 
     status = request_wait(ucp_worker, request);
