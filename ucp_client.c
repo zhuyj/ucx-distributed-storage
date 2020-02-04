@@ -5,12 +5,8 @@
 #include <unistd.h>    /* getopt */
 #include <stdlib.h>    /* atoi */
 
-#define TEST_STRING_LEN sizeof(test_message)
 #define DEFAULT_PORT    13337
-#define IP_STRING_LEN   50
-#define PORT_STRING_LEN 8
 
-const char test_message[]   = "UCX Simulated Distributed Storage Application";
 static uint16_t server_port = DEFAULT_PORT;
 
 /**
@@ -42,18 +38,6 @@ static void err_cb(void *arg, ucp_ep_h ep, ucs_status_t status)
 {
     printf("error handling callback was invoked with status %d (%s)\n",
            status, ucs_status_string(status));
-}
-
-/**
- * Set an address for the server to listen on - INADDR_ANY on a well known port.
- */
-void set_listen_addr(const char *address_str, struct sockaddr_in *listen_addr)
-{
-    /* The server will listen on INADDR_ANY */
-    memset(listen_addr, 0, sizeof(struct sockaddr_in));
-    listen_addr->sin_family      = AF_INET;
-    listen_addr->sin_addr.s_addr = (address_str) ? inet_addr(address_str) : INADDR_ANY;
-    listen_addr->sin_port        = htons(server_port);
 }
 
 /**
@@ -373,7 +357,6 @@ err_cleanup:
 err:
     return ret;
 }
-
 
 int main(int argc, char **argv)
 {
