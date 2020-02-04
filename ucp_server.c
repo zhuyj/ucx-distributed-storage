@@ -5,7 +5,6 @@
 #include <unistd.h>    /* getopt */
 #include <stdlib.h>    /* atoi */
 
-#define TEST_STRING_LEN sizeof(test_message)
 #define DEFAULT_PORT    13337
 #define IP_STRING_LEN   50
 #define PORT_STRING_LEN 8
@@ -69,17 +68,6 @@ void set_listen_addr(const char *address_str, struct sockaddr_in *listen_addr)
 }
 
 /**
- * Set an address to connect to. A given IP address on a well known port.
- */
-void set_connect_addr(const char *address_str, struct sockaddr_in *connect_addr)
-{
-    memset(connect_addr, 0, sizeof(struct sockaddr_in));
-    connect_addr->sin_family      = AF_INET;
-    connect_addr->sin_addr.s_addr = inet_addr(address_str);
-    connect_addr->sin_port        = htons(server_port);
-}
-
-/**
  * Print the received message on the server side or the sent data on the client
  * side.
  */
@@ -138,14 +126,13 @@ static void stream_send_cb(void *request, ucs_status_t status)
  * The client sends a message to the server and waits until the send it completed.
  * The server receives a message from the client and waits for its completion.
  */
-static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
+static int recv_send_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
     char send_message[127]= "";
     test_req_t *request;
-    size_t length;
     int ret = 0;
     ucs_status_t status;
-    size_t request_size;
+    size_t length, request_size;
 
     /* Server receives a message from the client using the stream API */
     request = ucp_stream_recv_nb(ep, &request_size, 1,
@@ -289,7 +276,7 @@ static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep)
     int ret;
 
     /* Client-Server communication via Stream API */
-    ret = send_recv_stream(worker, ep);
+    ret = recv_send_stream(worker, ep);
 
     /* Close the endpoint to the peer */
     ep_close(worker, ep);
