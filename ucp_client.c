@@ -120,8 +120,8 @@ static ucs_status_t start_client(ucp_worker_h ucp_worker, const char *ip,
 static void print_result(char *recv_message)
 {
     printf("\n\n-----------------------------------------\n\n");
-    printf("Client sent message: \n%s.\nlength: %ld\n",
-           test_message, TEST_STRING_LEN);
+    printf("Client received message: \n%s.\nlength: %ld\n",
+           recv_message, strlen(recv_message));
     printf("\n-----------------------------------------\n\n");
 }
 
@@ -154,20 +154,35 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
 }
 
 /**
+ *  * The callback on the receiving side, which is invoked upon receiving the
+ *   * stream message.
+ *    */
+static void stream_recv_cb(void *request, ucs_status_t status, size_t length)
+{
+    test_req_t *req = request;
+
+    req->complete = 1;
+
+    printf("stream_recv_cb returned with status %d (%s), length: %lu\n",
+           status, ucs_status_string(status), length);
+}
+
+/**
  * Send and receive a message using the Stream API.
  * The client sends a message to the server and waits until the send it completed.
  * The server receives a message from the client and waits for its completion.
  */
 static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char recv_message[TEST_STRING_LEN]= "";
+    char recv_message[127]= "";
     test_req_t *request;
     int ret = 0;
     ucs_status_t status;
+    size_t length, request_size = 127;
 
     /* Client sends a message to the server using the stream API */
-    request = ucp_stream_send_nb(ep, test_message, 1,
-                                 ucp_dt_make_contig(56),
+    request = ucp_stream_send_nb(ep, &request_size, 1,
+                                 ucp_dt_make_contig(sizeof(size_t)),
                                  stream_send_cb, 0);
 
     status = request_wait(ucp_worker, request);
@@ -176,7 +191,20 @@ static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         ret = -1;
     } else {
-        print_result(recv_message);
+        /* Server receives a message from the client using the stream API */
+        request = ucp_stream_recv_nb(ep, &recv_message, 1,
+                                     ucp_dt_make_contig(127),
+                                     stream_recv_cb, &length,
+                                     UCP_STREAM_RECV_FLAG_WAITALL);
+
+        status = request_wait(ucp_worker, request);
+        if (status != UCS_OK){
+            fprintf(stderr, "unable to receive UCX message (%s)\n",
+                    ucs_status_string(status));
+            ret = -1;
+        } else {
+            print_result(recv_message);
+        }
     }
 
     return ret;

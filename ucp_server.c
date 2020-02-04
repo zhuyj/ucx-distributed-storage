@@ -85,8 +85,8 @@ void set_connect_addr(const char *address_str, struct sockaddr_in *connect_addr)
  */
 static void print_result(char *recv_message)
 {
-    printf("UCX data message was received\n");
-    printf("\n\n----- UCP SERVER RECEIVED -------\n\n");
+    printf("UCX data message was sent\n");
+    printf("\n\n----- UCP SERVER SENT -------\n\n");
     printf("%s", recv_message);
     printf("\n\n------------------------------\n\n");
 }
@@ -120,21 +120,36 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
 }
 
 /**
+ *  * The callback on the sending side, which is invoked after finishing sending
+ *   * the stream message.
+ *    */
+static void stream_send_cb(void *request, ucs_status_t status)
+{
+    test_req_t *req = request;
+
+    req->complete = 1;
+
+    printf("stream_send_cb returned with status %d (%s)\n",
+           status, ucs_status_string(status));
+}
+
+/**
  * Send and receive a message using the Stream API.
  * The client sends a message to the server and waits until the send it completed.
  * The server receives a message from the client and waits for its completion.
  */
 static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char recv_message[TEST_STRING_LEN]= "";
+    char send_message[127]= "";
     test_req_t *request;
     size_t length;
     int ret = 0;
     ucs_status_t status;
+    size_t request_size;
 
     /* Server receives a message from the client using the stream API */
-    request = ucp_stream_recv_nb(ep, &recv_message, 1,
-                                 ucp_dt_make_contig(56),
+    request = ucp_stream_recv_nb(ep, &request_size, 1,
+                                 ucp_dt_make_contig(sizeof(size_t)),
                                  stream_recv_cb, &length,
                                  UCP_STREAM_RECV_FLAG_WAITALL);
 
@@ -144,9 +159,21 @@ static int send_recv_stream(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         ret = -1;
     } else {
-        print_result(recv_message);
-    }
+        printf("request_size is: %zd\n", request_size);
+        snprintf(send_message, 127, "%s,%s", test_message, test_message);
+        request = ucp_stream_send_nb(ep, send_message, 1,
+                                     ucp_dt_make_contig(127),
+                                     stream_send_cb, 0);
 
+        status = request_wait(ucp_worker, request);
+        if (status != UCS_OK){
+            fprintf(stderr, "unable to send UCX message (%s)\n",
+                    ucs_status_string(status));
+            ret = -1;
+        } else {
+            print_result(send_message);
+        }
+    }
     return ret;
 }
 
