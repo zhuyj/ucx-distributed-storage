@@ -290,8 +290,9 @@ int main(int argc, char **argv)
     printf("[0x%x] local address length: %lu\n",
            (unsigned int)pthread_self(), local_addr_len);
 
-    /* OOB connection establishment */
-    if (!client_target_name) {
+    /* Wait here to listen to the new client connection */
+    while (1) {
+        /* OOB connection establishment */
         oob_sock = server_connect(server_port);
         CHKERR_JUMP(oob_sock < 0, "server_connect\n", err_peer_addr);
 
@@ -303,15 +304,15 @@ int main(int argc, char **argv)
         ret = send(oob_sock, local_addr, local_addr_len, 0);
         CHKERR_JUMP_RETVAL(ret != (int)local_addr_len, "send address\n",
                            err_peer_addr, ret);
-    }
 
-    ret = run_ucx_server(ucp_worker);
+        ret = run_ucx_server(ucp_worker);
 
-    if (!ret && !err_handling_opt.failure) {
-        /* Make sure remote is disconnected before destroying local worker */
-        ret = barrier(oob_sock);
+        if (!ret && !err_handling_opt.failure) {
+            /* Make sure remote is disconnected before destroying local worker */
+            ret = barrier(oob_sock);
+        }
+        close(oob_sock);
     }
-    close(oob_sock);
 
 err_peer_addr:
     free(peer_addr);
