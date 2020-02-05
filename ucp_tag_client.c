@@ -160,7 +160,6 @@ static int run_ucx_client(ucp_worker_h ucp_worker)
 
     msg->data_len = local_addr_len;
     memcpy(msg + 1, local_addr, local_addr_len);
-
     request = ucp_tag_send_nb(server_ep, msg, msg_len,
                               ucp_dt_make_contig(1), tag,
                               send_handler);
@@ -229,9 +228,9 @@ static int run_ucx_client(ucp_worker_h ucp_worker)
         printf("UCX data message was received\n");
     }
 
-    str = calloc(1, test_string_length);
+    str = calloc(1, info_tag.length - 8);
     if (str != NULL) {
-        mem_type_memcpy(str, msg + 1, test_string_length);
+        mem_type_memcpy(str, msg + 1, info_tag.length - 8);
         printf("\n\n----- UCP TEST SUCCESS ----\n\n");
         printf("%s", str);
         printf("\n\n---------------------------\n\n");
