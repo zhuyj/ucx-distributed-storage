@@ -25,6 +25,7 @@
 
 struct msg {
     uint64_t        data_len;
+    uint64_t        request_data_len;
 };
 
 struct ucx_context {
@@ -159,6 +160,7 @@ static int run_ucx_client(ucp_worker_h ucp_worker)
     memset(msg, 0, msg_len);
 
     msg->data_len = local_addr_len;
+    msg->request_data_len = 128;
     memcpy(msg + 1, local_addr, local_addr_len);
     request = ucp_tag_send_nb(server_ep, msg, msg_len,
                               ucp_dt_make_contig(1), tag,
@@ -241,6 +243,70 @@ static int run_ucx_client(ucp_worker_h ucp_worker)
     }
 
     mem_type_free(msg);
+
+    /* receive ioresponse */
+    /* Receive test string from server */
+    for (;;) {
+
+        /* Probing incoming events in non-block mode */
+        msg_tag = ucp_tag_probe_nb(ucp_worker, tag, tag_mask, 1, &info_tag);
+        if (msg_tag != NULL) {
+            /* Message arrived */
+            break;
+        } else if (ucp_worker_progress(ucp_worker)) {
+            /* Some events were polled; try again without going to sleep */
+            continue;
+        }
+
+        /* If we got here, ucp_worker_progress() returned 0, so we can sleep.
+         * Following blocked methods used to polling internal file descriptor
+         * to make CPU idle and don't spin loop
+         */
+        if (ucp_test_mode == TEST_MODE_WAIT) {
+            /* Polling incoming events*/
+            status = ucp_worker_wait(ucp_worker);
+            CHKERR_JUMP(status != UCS_OK, "ucp_worker_wait\n", err_ep);
+        } else if (ucp_test_mode == TEST_MODE_EVENTFD) {
+            status = test_poll_wait(ucp_worker);
+            CHKERR_JUMP(status != UCS_OK, "test_poll_wait\n", err_ep);
+        }
+    }
+
+    msg = mem_type_malloc(info_tag.length);
+    CHKERR_JUMP(msg == NULL, "allocate memory\n", err_ep);
+
+    request = ucp_tag_msg_recv_nb(ucp_worker, msg, info_tag.length,
+                                  ucp_dt_make_contig(1), msg_tag,
+                                  recv_handler);
+
+    if (UCS_PTR_IS_ERR(request)) {
+        fprintf(stderr, "unable to receive UCX data message (%u)\n",
+                UCS_PTR_STATUS(request));
+        free(msg);
+        goto err_ep;
+    } else {
+        /* ucp_tag_msg_recv_nb() cannot return NULL */
+        assert(UCS_PTR_IS_PTR(request));
+        wait(ucp_worker, request);
+        request->completed = 0;
+        ucp_request_release(request);
+        printf("UCX data message was received\n");
+    }
+
+    str = calloc(1, info_tag.length - 8);
+    if (str != NULL) {
+        mem_type_memcpy(str, msg + 1, info_tag.length - 8);
+        printf("\n\n----- UCP TEST SUCCESS ----\n\n");
+        printf("%s", str);
+        printf("\n\n---------------------------\n\n");
+        free(str);
+    } else {
+        fprintf(stderr, "Memory allocation failed\n");
+        goto err_ep;
+    }
+
+    mem_type_free(msg);
+
 
     ret = 0;
 

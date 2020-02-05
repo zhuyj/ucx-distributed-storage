@@ -25,6 +25,7 @@
 
 struct msg {
     uint64_t        data_len;
+    uint64_t        request_data_len;
 };
 
 struct ucx_context {
@@ -44,7 +45,6 @@ static struct err_handling {
 
 static ucs_status_t client_status = UCS_OK;
 static uint16_t server_port = 13337;
-static long test_string_length = 16;
 static const ucp_tag_t tag  = 0x1337a880u;
 static const ucp_tag_t tag_mask = UINT64_MAX;
 static ucp_address_t *local_addr;
@@ -138,7 +138,7 @@ static int run_ucx_server(ucp_worker_h ucp_worker)
     ucp_ep_params_t ep_params;
     struct msg *msg = 0;
     struct ucx_context *request = 0;
-    size_t msg_len = 0;
+    size_t msg_len = 0, request_data_len;
     int ret;
 
     /* Receive client UCX address */
@@ -170,6 +170,7 @@ static int run_ucx_server(ucp_worker_h ucp_worker)
         printf("UCX address message was received\n");
     }
 
+    request_data_len = msg->request_data_len;
     peer_addr_len = msg->data_len;
     peer_addr     = malloc(peer_addr_len);
     if (peer_addr == NULL) {
@@ -197,15 +198,31 @@ static int run_ucx_server(ucp_worker_h ucp_worker)
     status = ucp_ep_create(ucp_worker, &ep_params, &client_ep);
     CHKERR_ACTION(status != UCS_OK, "ucp_ep_create\n", ret = -1; goto err);
 
-    msg_len = sizeof(*msg) + test_string_length;
+    msg_len = sizeof(*msg) + request_data_len;
     msg = mem_type_malloc(msg_len);
     CHKERR_ACTION(msg == NULL, "allocate memory\n", ret = -1; goto err_ep);
     mem_type_memset(msg, 0, msg_len);
 
     set_msg_data_len(msg, msg_len - sizeof(*msg));
-    ret = generate_test_string((char *)(msg + 1), test_string_length);
+    ret = generate_test_string((char *)(msg + 1), request_data_len);
     CHKERR_JUMP(ret < 0, "generate test string", err_free_mem_type_msg);
 
+    request = ucp_tag_send_nb(client_ep, msg, msg_len,
+                              ucp_dt_make_contig(1), tag,
+                              send_handler);
+    if (UCS_PTR_IS_ERR(request)) {
+        fprintf(stderr, "unable to send UCX data message\n");
+        ret = -1;
+        goto err_free_mem_type_msg;
+    } else if (UCS_PTR_IS_PTR(request)) {
+        printf("UCX data message was scheduled for send\n");
+        wait(ucp_worker, request);
+        request->completed = 0;
+        ucp_request_release(request);
+    }
+
+    msg_len = sizeof(*msg) + sizeof("ioresponse");
+    snprintf((char *)(msg + 1), msg_len - sizeof(*msg),  "ioresponse");
     request = ucp_tag_send_nb(client_ep, msg, msg_len,
                               ucp_dt_make_contig(1), tag,
                               send_handler);
@@ -360,13 +377,6 @@ ucs_status_t parse_cmd(int argc, char * const argv[], char **server_name)
                 fprintf(stderr, "Wrong server port number %d\n", server_port);
                 return UCS_ERR_UNSUPPORTED;
             }
-            break;
-        case 's':
-            test_string_length = atol(optarg);
-            if (test_string_length <= 0) {
-                fprintf(stderr, "Wrong string size %ld\n", test_string_length);
-                return UCS_ERR_UNSUPPORTED;
-            }	
             break;
         case 'm':
             test_mem_type = parse_mem_type(optarg);
