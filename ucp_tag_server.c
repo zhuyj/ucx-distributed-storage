@@ -275,8 +275,6 @@ int main(int argc, char **argv)
 
     status = ucp_init(&ucp_params, config, &ucp_context);
 
-    ucp_config_print(config, stdout, NULL, UCS_CONFIG_PRINT_CONFIG);
-
     ucp_config_release(config);
     CHKERR_JUMP(status != UCS_OK, "ucp_init\n", err);
 
