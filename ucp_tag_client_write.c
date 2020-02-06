@@ -1,462 +1,473 @@
-#ifndef HAVE_CONFIG_H
-#  define HAVE_CONFIG_H /* Force using config.h, so test would fail if header
-                           actually tries to use it */
-#endif
-
-#include "ucx_tag.h"
-
 #include <ucp/api/ucp.h>
 
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/epoll.h>
-#include <netinet/in.h>
-#include <assert.h>
-#include <netdb.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>  /* getopt */
-#include <ctype.h>   /* isprint */
-#include <pthread.h> /* pthread_self */
-#include <errno.h>   /* errno */
-#include <time.h>
-#include <signal.h>  /* raise */
+#include <string.h>    /* memset */
+#include <arpa/inet.h> /* inet_addr */
+#include <unistd.h>    /* getopt */
+#include <stdlib.h>    /* atoi */
 
-struct msg {
-    uint64_t        data_len;
-};
+#define DEFAULT_PORT       13337
+#define IP_STRING_LEN      50
+#define PORT_STRING_LEN    8
+#define TAG                0xCAFE
+#define COMM_TYPE_DEFAULT  "STREAM"
 
-struct ucx_context {
-    int             completed;
-};
+static uint16_t server_port = DEFAULT_PORT;
 
-enum ucp_test_mode_t {
-    TEST_MODE_PROBE,
-    TEST_MODE_WAIT,
-    TEST_MODE_EVENTFD
-} ucp_test_mode = TEST_MODE_PROBE;
+/**
+ * Server's application context to be used in the user's connection request
+ * callback.
+ * It holds the server's listener and the handle to an incoming connection request.
+ */
+typedef struct ucx_server_ctx {
+    volatile ucp_conn_request_h conn_request;
+    ucp_listener_h              listener;
+} ucx_server_ctx_t;
 
-static struct err_handling {
-    ucp_err_handling_mode_t ucp_err_mode;
-    int                     failure;
-} err_handling_opt;
 
-static uint16_t server_port = 13337;
-static long test_string_length = 16;
-static const ucp_tag_t tag  = 0x1337a880u;
-static const ucp_tag_t tag_mask = UINT64_MAX;
-static ucp_address_t *local_addr;
-static ucp_address_t *peer_addr;
+/**
+ * Stream request context. Holds a value to indicate whether or not the
+ * request is completed.
+ */
+typedef struct test_req {
+    int complete;
+} test_req_t;
 
-static size_t local_addr_len;
-static size_t peer_addr_len;
-
-static ucs_status_t parse_cmd(int argc, char * const argv[], char **server_name);
-
-static void request_init(void *request)
+/**
+ * The callback on the sending side, which is invoked after finishing sending
+ * the message.
+ */
+static void send_cb(void *request, ucs_status_t status)
 {
-    struct ucx_context *ctx = (struct ucx_context *) request;
-    ctx->completed = 0;
+    test_req_t *req = request;
+
+    req->complete = 1;
+
+    printf("send_cb returned with status %d (%s)\n",
+           status, ucs_status_string(status));
 }
 
-static void send_handler(void *request, ucs_status_t status)
+/**
+ * Error handling callback.
+ */
+static void err_cb(void *arg, ucp_ep_h ep, ucs_status_t status)
 {
-    struct ucx_context *context = (struct ucx_context *) request;
-
-    context->completed = 1;
-
-    printf("[0x%x] send handler called with status %d (%s)\n",
-           (unsigned int)pthread_self(), status, ucs_status_string(status));
+    printf("error handling callback was invoked with status %d (%s)\n",
+           status, ucs_status_string(status));
 }
 
-static void recv_handler(void *request, ucs_status_t status,
-                        ucp_tag_recv_info_t *info)
+/**
+ * Set an address for the server to listen on - INADDR_ANY on a well known port.
+ */
+void set_listen_addr(const char *address_str, struct sockaddr_in *listen_addr)
 {
-    struct ucx_context *context = (struct ucx_context *) request;
-
-    context->completed = 1;
-
-    printf("[0x%x] receive handler called with status %d (%s), length %lu\n",
-           (unsigned int)pthread_self(), status, ucs_status_string(status),
-           info->length);
+    /* The server will listen on INADDR_ANY */
+    memset(listen_addr, 0, sizeof(struct sockaddr_in));
+    listen_addr->sin_family      = AF_INET;
+    listen_addr->sin_addr.s_addr = (address_str) ? inet_addr(address_str) : INADDR_ANY;
+    listen_addr->sin_port        = htons(server_port);
 }
 
-static void wait(ucp_worker_h ucp_worker, struct ucx_context *context)
+/**
+ * Set an address to connect to. A given IP address on a well known port.
+ */
+void set_connect_addr(const char *address_str, struct sockaddr_in *connect_addr)
 {
-    while (context->completed == 0) {
+    memset(connect_addr, 0, sizeof(struct sockaddr_in));
+    connect_addr->sin_family      = AF_INET;
+    connect_addr->sin_addr.s_addr = inet_addr(address_str);
+    connect_addr->sin_port        = htons(server_port);
+}
+
+/**
+ * Initialize the client side. Create an endpoint from the client side to be
+ * connected to the remote server (to the given IP).
+ */
+static ucs_status_t start_client(ucp_worker_h ucp_worker, const char *ip,
+                                 ucp_ep_h *client_ep)
+{
+    ucp_ep_params_t ep_params;
+    struct sockaddr_in connect_addr;
+    ucs_status_t status;
+
+    set_connect_addr(ip, &connect_addr);
+
+    /*
+     * Endpoint field mask bits:
+     * UCP_EP_PARAM_FIELD_FLAGS             - Use the value of the 'flags' field.
+     * UCP_EP_PARAM_FIELD_SOCK_ADDR         - Use a remote sockaddr to connect
+     *                                        to the remote peer.
+     * UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE - Error handling mode - this flag
+     *                                        is temporarily required since the
+     *                                        endpoint will be closed with
+     *                                        UCP_EP_CLOSE_MODE_FORCE which
+     *                                        requires this mode.
+     *                                        Once UCP_EP_CLOSE_MODE_FORCE is
+     *                                        removed, the error handling mode
+     *                                        will be removed.
+     */
+    ep_params.field_mask       = UCP_EP_PARAM_FIELD_FLAGS       |
+                                 UCP_EP_PARAM_FIELD_SOCK_ADDR   |
+                                 UCP_EP_PARAM_FIELD_ERR_HANDLER |
+                                 UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
+    ep_params.err_mode         = UCP_ERR_HANDLING_MODE_PEER;
+    ep_params.err_handler.cb   = err_cb;
+    ep_params.err_handler.arg  = NULL;
+    ep_params.flags            = UCP_EP_PARAMS_FLAGS_CLIENT_SERVER;
+    ep_params.sockaddr.addr    = (struct sockaddr*)&connect_addr;
+    ep_params.sockaddr.addrlen = sizeof(connect_addr);
+
+    status = ucp_ep_create(ucp_worker, &ep_params, client_ep);
+    if (status != UCS_OK) {
+        fprintf(stderr, "failed to connect to %s (%s)\n", ip, ucs_status_string(status));
+    }
+
+    return status;
+}
+
+/**
+ * Progress the request until it completes.
+ */
+static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
+{
+    ucs_status_t status;
+
+    /*  if operation was completed immediately */
+    if (request == NULL) {
+        return UCS_OK;
+    }
+
+    if (UCS_PTR_IS_ERR(request)) {
+        return UCS_PTR_STATUS(request);
+    }
+
+    while (request->complete == 0) {
         ucp_worker_progress(ucp_worker);
     }
+    status = ucp_request_check_status(request);
+
+    /* This request may be reused so initialize it for next time */
+    request->complete = 0;
+    ucp_request_free(request);
+
+    return status;
 }
 
-static ucs_status_t test_poll_wait(ucp_worker_h ucp_worker)
+static void tag_recv_cb(void *request, ucs_status_t status,
+                        ucp_tag_recv_info_t *info)
 {
-    int err            = 0;
-    ucs_status_t ret   = UCS_ERR_NO_MESSAGE;
-    int epoll_fd_local = 0;
-    int epoll_fd       = 0;
-    ucs_status_t status;
-    struct epoll_event ev;
-    ev.data.u64        = 0;
+    test_req_t *req = request;
 
-    status = ucp_worker_get_efd(ucp_worker, &epoll_fd);
-    CHKERR_JUMP(UCS_OK != status, "ucp_worker_get_efd", err);
+    req->complete = 1;
 
-    /* It is recommended to copy original fd */
-    epoll_fd_local = epoll_create(1);
+    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
+           "sender_tag: 0x%lX\n",
+           status, ucs_status_string(status), info->length, info->sender_tag);
+}
 
-    ev.data.fd = epoll_fd;
-    ev.events = EPOLLIN;
-    err = epoll_ctl(epoll_fd_local, EPOLL_CTL_ADD, epoll_fd, &ev);
-    CHKERR_JUMP(err < 0, "add original socket to the new epoll\n", err_fd);
+static int generate_test_string(char *str, int size)
+{
+    char *tmp_str;
+    int i;
 
-    /* Need to prepare ucp_worker before epoll_wait */
-    status = ucp_worker_arm(ucp_worker);
-    if (status == UCS_ERR_BUSY) { /* some events are arrived already */
-        ret = UCS_OK;
-        goto err_fd;
+    tmp_str = calloc(1, size);
+    if (!tmp_str)
+        return -1;
+
+    memset(tmp_str, 0, size);
+
+    for (i = 0; i < (size - 1); ++i) {
+        tmp_str[i] = 'A' + (i % 26);
     }
-    CHKERR_JUMP(status != UCS_OK, "ucp_worker_arm\n", err_fd);
 
-    do {
-        err = epoll_wait(epoll_fd_local, &ev, 1, -1);
-    } while ((err == -1) && (errno == EINTR));
+    memcpy(str, tmp_str, size);
 
-    ret = UCS_OK;
-
-err_fd:
-    close(epoll_fd_local);
-
-err:
-    return ret;
+    free(tmp_str);
+    return 0;
 }
 
-#define ARBITRARY_NUMBER_DATA    64
-
-static int run_ucx_client(ucp_worker_h ucp_worker)
+/**
+ * Send and receive a message using the Tag-Matching API.
+ * The client sends a message to the server and waits until the send it completed.
+ * The server receives a message from the client and waits for its completion.
+ */
+static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    ucp_tag_recv_info_t info_tag;
-    ucp_tag_message_h msg_tag;
+    char *recv_message = NULL;
+    test_req_t *request;
+    size_t length = 64;
     ucs_status_t status;
-    ucp_ep_h server_ep;
-    ucp_ep_params_t ep_params;
-    struct msg *msg = 0;
-    struct ucx_context *request = 0;
-    size_t msg_len = 0;
-    int ret = -1;
-    char *str;
-
-    /* Send client UCX address to server */
-    ep_params.field_mask      = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
-                                UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
-    ep_params.address         = peer_addr;
-    ep_params.err_mode        = err_handling_opt.ucp_err_mode;
-
-    status = ucp_ep_create(ucp_worker, &ep_params, &server_ep);
-    CHKERR_JUMP(status != UCS_OK, "ucp_ep_create\n", err);
+    int ret = 0;
 
     /* send iorequest */
-    printf("Send iorequest\n");
-    msg_len = sizeof(*msg) + local_addr_len;
-    msg     = malloc(msg_len);
-    CHKERR_JUMP(msg == NULL, "allocate memory\n", err_ep);
-    memset(msg, 0, msg_len);
+    /* Client sends a message to the server using the Tag-Matching API */
+    request = ucp_tag_send_nb(ep, &length, sizeof(size_t),
+                              ucp_dt_make_contig(1), TAG,
+                              send_cb);
 
-    msg->data_len = local_addr_len;
-    memcpy(msg + 1, local_addr, local_addr_len);
-    request = ucp_tag_send_nb(server_ep, msg, msg_len,
-                              ucp_dt_make_contig(1), tag,
-                              send_handler);
-    if (UCS_PTR_IS_ERR(request)) {
-        fprintf(stderr, "unable to send UCX address message\n");
-        free(msg);
-        goto err_ep;
-    } else if (UCS_PTR_IS_PTR(request)) {
-        wait(ucp_worker, request);
-        request->completed = 0; /* Reset request state before recycling it */
-        ucp_request_release(request);
+    status = request_wait(ucp_worker, request);
+    if (status != UCS_OK){
+        fprintf(stderr, "unable to send UCX message (%s)\n",
+                ucs_status_string(status));
+        ret = -1;
     }
 
-    free(msg);
+    printf("line:%d, send io request len:%zu\n", __LINE__, length);
 
-    /* send data */
-    printf("Send Data\n");
-    msg_len = sizeof(*msg) + ARBITRARY_NUMBER_DATA;
-    msg     = malloc(msg_len);
-    CHKERR_JUMP(msg == NULL, "allocate memory\n", err_ep);
-    memset(msg, 0, msg_len);
+    /* send data*/
+    recv_message = malloc(length + 1);
+    generate_test_string(recv_message, length);
+    request = ucp_tag_send_nb(ep, recv_message, length,
+                              ucp_dt_make_contig(1), TAG,
+                              send_cb);
 
-    msg->data_len = ARBITRARY_NUMBER_DATA;
-    ret = generate_test_string((char *)(msg + 1), ARBITRARY_NUMBER_DATA);
-    request = ucp_tag_send_nb(server_ep, msg, msg_len,
-                              ucp_dt_make_contig(1), tag,
-                              send_handler);
-    if (UCS_PTR_IS_ERR(request)) {
-        fprintf(stderr, "unable to send UCX address message\n");
-        free(msg);
-        goto err_ep;
-    } else if (UCS_PTR_IS_PTR(request)) {
-        wait(ucp_worker, request);
-        request->completed = 0; /* Reset request state before recycling it */
-        ucp_request_release(request);
+    status = request_wait(ucp_worker, request);
+    if (status != UCS_OK){
+        fprintf(stderr, "unable to send UCX message (%s)\n",
+                ucs_status_string(status));
+        ret = -1;
     }
+    printf("line:%d, send data:%s\n\n", __LINE__, recv_message);
+    free(recv_message);
 
-    free(msg);
+    /* recv ioresponse */
+    recv_message = malloc(11);
+    memset(recv_message, 0, 11);
+    request = ucp_tag_recv_nb(ucp_worker, recv_message, 10,
+                              ucp_dt_make_contig(1),
+                              TAG, 0, tag_recv_cb);
 
-    if (err_handling_opt.failure) {
-        fprintf(stderr, "Emulating unexpected failure on client side\n");
-        raise(SIGKILL);
+    status = request_wait(ucp_worker, request);
+    if (status != UCS_OK){
+        fprintf(stderr, "unable to receive UCX message (%s)\n",
+                ucs_status_string(status));
+        ret = -1;
     }
+    printf("line:%d, len:%s\n\n", __LINE__, recv_message);
+    free(recv_message);
 
-    /* Receive test string from server */
-    for (;;) {
-
-        /* Probing incoming events in non-block mode */
-        msg_tag = ucp_tag_probe_nb(ucp_worker, tag, tag_mask, 1, &info_tag);
-        if (msg_tag != NULL) {
-            /* Message arrived */
-            break;
-        } else if (ucp_worker_progress(ucp_worker)) {
-            /* Some events were polled; try again without going to sleep */
-            continue;
-        }
-
-        /* If we got here, ucp_worker_progress() returned 0, so we can sleep.
-         * Following blocked methods used to polling internal file descriptor
-         * to make CPU idle and don't spin loop
-         */
-        if (ucp_test_mode == TEST_MODE_WAIT) {
-            /* Polling incoming events*/
-            status = ucp_worker_wait(ucp_worker);
-            CHKERR_JUMP(status != UCS_OK, "ucp_worker_wait\n", err_ep);
-        } else if (ucp_test_mode == TEST_MODE_EVENTFD) {
-            status = test_poll_wait(ucp_worker);
-            CHKERR_JUMP(status != UCS_OK, "test_poll_wait\n", err_ep);
-        }
-    }
-
-    printf("Receive ioresponse\n");
-    msg = mem_type_malloc(info_tag.length);
-    CHKERR_JUMP(msg == NULL, "allocate memory\n", err_ep);
-
-    request = ucp_tag_msg_recv_nb(ucp_worker, msg, info_tag.length,
-                                  ucp_dt_make_contig(1), msg_tag,
-                                  recv_handler);
-
-    if (UCS_PTR_IS_ERR(request)) {
-        fprintf(stderr, "unable to receive UCX data message (%u)\n",
-                UCS_PTR_STATUS(request));
-        free(msg);
-        goto err_ep;
-    } else {
-        /* ucp_tag_msg_recv_nb() cannot return NULL */
-        assert(UCS_PTR_IS_PTR(request));
-        wait(ucp_worker, request);
-        request->completed = 0;
-        ucp_request_release(request);
-        printf("UCX data message was received\n");
-    }
-
-    str = calloc(1, info_tag.length - 8);
-    if (str != NULL) {
-        mem_type_memcpy(str, msg + 1, info_tag.length - 8);
-        printf("\n\n----- UCP TEST SUCCESS ----\n\n");
-        printf("%s", str);
-        printf("\n\n---------------------------\n\n");
-        free(str);
-    } else {
-        fprintf(stderr, "Memory allocation failed\n");
-        goto err_ep;
-    }
-
-    mem_type_free(msg);
-
-    ret = 0;
-
-err_ep:
-    ucp_ep_destroy(server_ep);
-
-err:
     return ret;
 }
 
-int main(int argc, char **argv)
+/**
+ * Close the given endpoint.
+ * Currently closing the endpoint with UCP_EP_CLOSE_MODE_FORCE since we currently
+ * cannot rely on the client side to be present during the server's endpoint
+ * closing process.
+ */
+static void ep_close(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    /* UCP temporary vars */
-    ucp_params_t ucp_params;
-    ucp_worker_params_t worker_params;
-    ucp_config_t *config;
     ucs_status_t status;
+    void *close_req;
 
-    /* UCP handler objects */
-    ucp_context_h ucp_context;
-    ucp_worker_h ucp_worker;
+    close_req = ucp_ep_close_nb(ep, UCP_EP_CLOSE_MODE_FORCE);
+    if (UCS_PTR_IS_PTR(close_req)) {
+        do {
+            ucp_worker_progress(ucp_worker);
+            status = ucp_request_check_status(close_req);
+        } while (status == UCS_INPROGRESS);
 
-    /* OOB connection vars */
-    uint64_t addr_len = 0;
-    char *client_target_name = NULL;
-    int oob_sock = -1;
-    int ret = -1;
-
-    memset(&ucp_params, 0, sizeof(ucp_params));
-    memset(&worker_params, 0, sizeof(worker_params));
-
-    /* Parse the command line */
-    status = parse_cmd(argc, argv, &client_target_name);
-    CHKERR_JUMP(status != UCS_OK, "parse_cmd\n", err);
-
-    /* UCP initialization */
-    status = ucp_config_read(NULL, NULL, &config);
-    CHKERR_JUMP(status != UCS_OK, "ucp_config_read\n", err);
-
-    ucp_params.field_mask   = UCP_PARAM_FIELD_FEATURES |
-                              UCP_PARAM_FIELD_REQUEST_SIZE |
-                              UCP_PARAM_FIELD_REQUEST_INIT;
-    ucp_params.features     = UCP_FEATURE_TAG;
-    if (ucp_test_mode == TEST_MODE_WAIT || ucp_test_mode == TEST_MODE_EVENTFD) {
-        ucp_params.features |= UCP_FEATURE_WAKEUP;
+        ucp_request_free(close_req);
+    } else if (UCS_PTR_STATUS(close_req) != UCS_OK) {
+        fprintf(stderr, "failed to close ep %p\n", (void*)ep);
     }
-    ucp_params.request_size    = sizeof(struct ucx_context);
-    ucp_params.request_init    = request_init;
+}
 
-    status = ucp_init(&ucp_params, config, &ucp_context);
+/**
+ * A callback to be invoked by UCX in order to initialize the user's request.
+ */
+static void request_init(void *request)
+{
+    test_req_t *req = request;
+    req->complete = 0;
+}
 
-    ucp_config_release(config);
-    CHKERR_JUMP(status != UCS_OK, "ucp_init\n", err);
+/**
+ * Print this application's usage help message.
+ */
+static void usage()
+{
+    fprintf(stderr, "Usage: ucp_client_server [parameters]\n");
+    fprintf(stderr, "UCP client-server example utility\n");
+    fprintf(stderr, "\nParameters are:\n");
+    fprintf(stderr, " -a Set IP address of the server "
+                    "(required for client and should not be specified "
+                    "for the server)\n");
+    fprintf(stderr, " -l Set IP address where server listens "
+                    "(If not specified, server uses INADDR_ANY; "
+                    "Irrelevant at client)\n");
+    fprintf(stderr, " -p Port number to listen/connect to (default = %d). "
+                    "0 on the server side means select a random port and print it\n",
+                    DEFAULT_PORT);
+    fprintf(stderr, " -c Communication type for the client and server. "
+                    " Valid values are:\n"
+                    "     'stream' : Stream API\n"
+                    "     'tag'    : Tag API\n"
+                    "    If not specified, %s API will be used.\n", COMM_TYPE_DEFAULT);
+    fprintf(stderr, "\n");
+}
+
+/**
+ * Parse the command line arguments.
+ */
+static int parse_cmd(int argc, char *const argv[], char **server_addr,
+                     char **listen_addr)
+{
+    int c = 0;
+    int port;
+
+    opterr = 0;
+
+    while ((c = getopt(argc, argv, "a:l:p:c:")) != -1) {
+        switch (c) {
+        case 'a':
+            *server_addr = optarg;
+            break;
+       case 'l':
+            *listen_addr = optarg;
+            break;
+        case 'p':
+            port = atoi(optarg);
+            if ((port < 0) || (port > UINT16_MAX)) {
+                fprintf(stderr, "Wrong server port number %d\n", port);
+                return -1;
+            }
+            server_port = port;
+            break;
+        default:
+            usage();
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep)
+{
+    int ret;
+
+    /* Client-Server communication via Tag-Matching API */
+    ret = send_recv_tag(worker, ep);
+
+    /* Close the endpoint to the peer */
+    ep_close(worker, ep);
+
+    return ret;
+}
+
+/**
+ * Create a ucp worker on the given ucp context.
+ */
+static int init_worker(ucp_context_h ucp_context, ucp_worker_h *ucp_worker)
+{
+    ucp_worker_params_t worker_params;
+    ucs_status_t status;
+    int ret = 0;
+
+    memset(&worker_params, 0, sizeof(worker_params));
 
     worker_params.field_mask  = UCP_WORKER_PARAM_FIELD_THREAD_MODE;
     worker_params.thread_mode = UCS_THREAD_MODE_SINGLE;
 
-    status = ucp_worker_create(ucp_context, &worker_params, &ucp_worker);
-    CHKERR_JUMP(status != UCS_OK, "ucp_worker_create\n", err_cleanup);
-
-    status = ucp_worker_get_address(ucp_worker, &local_addr, &local_addr_len);
-    CHKERR_JUMP(status != UCS_OK, "ucp_worker_get_address\n", err_worker);
-
-    printf("[0x%x] local address length: %lu\n",
-           (unsigned int)pthread_self(), local_addr_len);
-
-    /* OOB connection establishment */
-    if (client_target_name) {
-        peer_addr_len = local_addr_len;
-
-        oob_sock = client_connect(client_target_name, server_port);
-        CHKERR_JUMP(oob_sock < 0, "client_connect\n", err_addr);
-
-        ret = recv(oob_sock, &addr_len, sizeof(addr_len), MSG_WAITALL);
-        CHKERR_JUMP_RETVAL(ret != (int)sizeof(addr_len),
-                           "receive address length\n", err_addr, ret);
-
-        peer_addr_len = addr_len;
-        peer_addr = malloc(peer_addr_len);
-        CHKERR_JUMP(!peer_addr, "allocate memory\n", err_addr);
-
-        ret = recv(oob_sock, peer_addr, peer_addr_len, MSG_WAITALL);
-        CHKERR_JUMP_RETVAL(ret != (int)peer_addr_len,
-                           "receive address\n", err_peer_addr, ret);
+    status = ucp_worker_create(ucp_context, &worker_params, ucp_worker);
+    if (status != UCS_OK) {
+        fprintf(stderr, "failed to ucp_worker_create (%s)\n", ucs_status_string(status));
+        ret = -1;
     }
-    ret = run_ucx_client(ucp_worker);
-    if (!ret && !err_handling_opt.failure) {
-        /* Make sure remote is disconnected before destroying local worker */
-        ret = barrier(oob_sock);
+
+    return ret;
+}
+
+static int run_client(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
+                      char *server_addr)
+{
+    ucp_ep_h     client_ep;
+    ucs_status_t status;
+    int          ret;
+
+    status = start_client(ucp_worker, server_addr, &client_ep);
+    if (status != UCS_OK) {
+        fprintf(stderr, "failed to start client (%s)\n", ucs_status_string(status));
+        ret = -1;
+        goto out;
     }
-    close(oob_sock);
 
-err_peer_addr:
-    free(peer_addr);
+    ret = client_server_communication(ucp_worker, client_ep);
 
-err_addr:
-    ucp_worker_release_address(ucp_worker, local_addr);
+out:
+    return ret;
+}
 
-err_worker:
-    ucp_worker_destroy(ucp_worker);
+/**
+ * Initialize the UCP context and worker.
+ */
+static int init_context(ucp_context_h *ucp_context, ucp_worker_h *ucp_worker)
+{
+    /* UCP objects */
+    ucp_params_t ucp_params;
+    ucs_status_t status;
+    int ret = 0;
+
+    memset(&ucp_params, 0, sizeof(ucp_params));
+
+    /* UCP initialization */
+    ucp_params.field_mask   = UCP_PARAM_FIELD_FEATURES     |
+                              UCP_PARAM_FIELD_REQUEST_SIZE |
+                              UCP_PARAM_FIELD_REQUEST_INIT;
+    ucp_params.features     = UCP_FEATURE_STREAM | UCP_FEATURE_TAG;
+    ucp_params.request_size = sizeof(test_req_t);
+    ucp_params.request_init = request_init;
+
+    status = ucp_init(&ucp_params, NULL, ucp_context);
+    if (status != UCS_OK) {
+        fprintf(stderr, "failed to ucp_init (%s)\n", ucs_status_string(status));
+        ret = -1;
+        goto err;
+    }
+
+    ret = init_worker(*ucp_context, ucp_worker);
+    if (ret != 0) {
+        goto err_cleanup;
+    }
+
+    return ret;
 
 err_cleanup:
-    ucp_cleanup(ucp_context);
-
+    ucp_cleanup(*ucp_context);
 err:
     return ret;
 }
 
-ucs_status_t parse_cmd(int argc, char * const argv[], char **server_name)
+
+int main(int argc, char **argv)
 {
-    int c = 0, index = 0;
-    opterr = 0;
+    char *server_addr = NULL;
+    char *listen_addr = NULL;
+    int ret;
 
-    err_handling_opt.ucp_err_mode   = UCP_ERR_HANDLING_MODE_NONE;
-    err_handling_opt.failure        = 0;
+    /* UCP objects */
+    ucp_context_h ucp_context;
+    ucp_worker_h  ucp_worker;
 
-    while ((c = getopt(argc, argv, "wfben:p:s:m:h")) != -1) {
-        switch (c) {
-        case 'w':
-            ucp_test_mode = TEST_MODE_WAIT;
-            break;
-        case 'f':
-            ucp_test_mode = TEST_MODE_EVENTFD;
-            break;
-        case 'b':
-            ucp_test_mode = TEST_MODE_PROBE;
-            break;
-        case 'e':
-            err_handling_opt.ucp_err_mode   = UCP_ERR_HANDLING_MODE_PEER;
-            err_handling_opt.failure        = 1;
-            break;
-        case 'n':
-            *server_name = optarg;
-            break;
-        case 'p':
-            server_port = atoi(optarg);
-            if (server_port <= 0) {
-                fprintf(stderr, "Wrong server port number %d\n", server_port);
-                return UCS_ERR_UNSUPPORTED;
-            }
-            break;
-        case 's':
-            test_string_length = atol(optarg);
-            if (test_string_length <= 0) {
-                fprintf(stderr, "Wrong string size %ld\n", test_string_length);
-                return UCS_ERR_UNSUPPORTED;
-            }	
-            break;
-        case 'm':
-            test_mem_type = parse_mem_type(optarg);
-            if (test_mem_type == UCS_MEMORY_TYPE_LAST) {
-                return UCS_ERR_UNSUPPORTED;
-            }
-            break;
-        case '?':
-            if (optopt == 's') {
-                fprintf(stderr, "Option -%c requires an argument.\n", optopt);
-            } else if (isprint (optopt)) {
-                fprintf(stderr, "Unknown option `-%c'.\n", optopt);
-            } else {
-                fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
-            }
-            /* Fall through */
-        case 'h':
-        default:
-            fprintf(stderr, "Usage: ucp_hello_world [parameters]\n");
-            fprintf(stderr, "UCP hello world client/server example utility\n");
-            fprintf(stderr, "\nParameters are:\n");
-            fprintf(stderr, "  -w      Select test mode \"wait\" to test "
-                    "ucp_worker_wait function\n");
-            fprintf(stderr, "  -f      Select test mode \"event fd\" to test "
-                    "ucp_worker_get_efd function with later poll\n");
-            fprintf(stderr, "  -b      Select test mode \"busy polling\" to test "
-                    "ucp_tag_probe_nb and ucp_worker_progress (default)\n");
-            fprintf(stderr, "  -e      Emulate unexpected failure on server side"
-                    "and handle an error on client side with enabled "
-                    "UCP_ERR_HANDLING_MODE_PEER\n");
-            print_common_help();
-            fprintf(stderr, "\n");
-            return UCS_ERR_UNSUPPORTED;
-        }
+    ret = parse_cmd(argc, argv, &server_addr, &listen_addr);
+    if (ret != 0) {
+        goto err;
     }
-    fprintf(stderr, "INFO: UCP_TAG_DISTRIBUTED_WRITE mode = %d server = %s port = %d\n",
-            ucp_test_mode, *server_name, server_port);
 
-    for (index = optind; index < argc; index++) {
-        fprintf(stderr, "WARNING: Non-option argument %s\n", argv[index]);
+    /* Initialize the UCX required objects */
+    ret = init_context(&ucp_context, &ucp_worker);
+    if (ret != 0) {
+        goto err;
     }
-    return UCS_OK;
+
+    /* Client-Server initialization */
+    if (server_addr != NULL) {
+       /* Client side */
+        ret = run_client(ucp_context, ucp_worker, server_addr);
+    }
+
+    ucp_worker_destroy(ucp_worker);
+    ucp_cleanup(ucp_context);
+err:
+    return ret;
 }
