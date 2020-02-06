@@ -6,14 +6,12 @@
 #include <stdlib.h>    /* atoi */
 #include <string.h>
 
-#define TEST_STRING_LEN    sizeof(test_message)
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50
 #define PORT_STRING_LEN    8
 #define TAG                0xCAFE
 #define COMM_TYPE_DEFAULT  "STREAM"
 
-const char test_message[]   = "UCX Client-Server Hello World";
 static uint16_t server_port = DEFAULT_PORT;
 
 typedef enum {
