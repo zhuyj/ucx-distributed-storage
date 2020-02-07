@@ -14,12 +14,6 @@
 
 static uint16_t server_port = DEFAULT_PORT;
 
-typedef enum {
-    CLIENT_SERVER_SEND_RECV_STREAM  = UCS_BIT(0),
-    CLIENT_SERVER_SEND_RECV_TAG     = UCS_BIT(1),
-    CLIENT_SERVER_SEND_RECV_DEFAULT = CLIENT_SERVER_SEND_RECV_STREAM
-} send_recv_type_t;
-
 /**
  * Server's application context to be used in the user's connection request
  * callback.
@@ -152,7 +146,7 @@ static int generate_test_string(char *str, int size)
  * The client sends a message to the server and waits until the send it completed.
  * The server receives a message from the client and waits for its completion.
  */
-static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
+static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
     char *recv_message = NULL;
     test_req_t *request;
@@ -167,8 +161,8 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
 
     status = request_wait(ucp_worker, request);
     if (status != UCS_OK){
-        fprintf(stderr, "unable to %s UCX message (%s)\n",
-                is_server ? "receive": "send", ucs_status_string(status));
+        fprintf(stderr, "unable to receive UCX message (%s)\n",
+                ucs_status_string(status));
         return -1;
     }
 
@@ -184,8 +178,8 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
 
     status = request_wait(ucp_worker, request);
     if (status != UCS_OK){
-        fprintf(stderr, "unable to %s UCX message (%s)\n",
-                is_server ? "receive": "send", ucs_status_string(status));
+        fprintf(stderr, "unable to send UCX message (%s)\n",
+                ucs_status_string(status));
         free(recv_message);
         return -1;
     }
@@ -201,8 +195,8 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep, int is_server)
 
     status = request_wait(ucp_worker, request);
     if (status != UCS_OK){
-        fprintf(stderr, "unable to %s UCX message (%s)\n",
-                is_server ? "receive": "send", ucs_status_string(status));
+        fprintf(stderr, "unable to send UCX message (%s)\n",
+                ucs_status_string(status));
         free(recv_message);
         return -1;
     }
@@ -274,7 +268,7 @@ static void usage()
  * Parse the command line arguments.
  */
 static int parse_cmd(int argc, char *const argv[], char **server_addr,
-                     char **listen_addr, send_recv_type_t *send_recv_type)
+                     char **listen_addr)
 {
     int c = 0;
     int port;
@@ -286,18 +280,7 @@ static int parse_cmd(int argc, char *const argv[], char **server_addr,
         case 'a':
             *server_addr = optarg;
             break;
-        case 'c':
-            if (!strcasecmp(optarg, "stream")) {
-                *send_recv_type = CLIENT_SERVER_SEND_RECV_STREAM;
-            } else if (!strcasecmp(optarg, "tag")) {
-                *send_recv_type = CLIENT_SERVER_SEND_RECV_TAG;
-            } else {
-                fprintf(stderr, "Wrong communication type %s. "
-                        "Using %s as default\n", optarg, COMM_TYPE_DEFAULT);
-                *send_recv_type = CLIENT_SERVER_SEND_RECV_DEFAULT;
-            }
-            break;
-        case 'l':
+       case 'l':
             *listen_addr = optarg;
             break;
         case 'p':
@@ -357,14 +340,12 @@ static char* sockaddr_get_port_str(const struct sockaddr_storage *sock_addr,
     }
 }
 
-static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep,
-                                       send_recv_type_t send_recv_type,
-                                       int is_server)
+static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep)
 {
     int ret;
 
     /* Client-Server communication via Tag-Matching API */
-    ret = send_recv_tag(worker, ep, is_server);
+    ret = send_recv_tag(worker, ep);
 
     /* Close the endpoint to the peer */
     ep_close(worker, ep);
@@ -496,7 +477,7 @@ out:
 }
 
 static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
-                      char *listen_addr, send_recv_type_t send_recv_type)
+                      char *listen_addr)
 {
     ucx_server_ctx_t context;
     ucp_worker_h     ucp_data_worker;
@@ -545,7 +526,7 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
             goto err_listener;
         }
 
-        client_server_communication(ucp_data_worker, server_ep, send_recv_type, 1);
+        client_server_communication(ucp_data_worker, server_ep);
 
         /* Reinitialize the server's context to be used for the next client */
         context.conn_request = NULL;
@@ -603,7 +584,6 @@ err:
 
 int main(int argc, char **argv)
 {
-    send_recv_type_t send_recv_type = CLIENT_SERVER_SEND_RECV_DEFAULT;
     char *server_addr = NULL;
     char *listen_addr = NULL;
     int ret;
@@ -612,7 +592,7 @@ int main(int argc, char **argv)
     ucp_context_h ucp_context;
     ucp_worker_h  ucp_worker;
 
-    ret = parse_cmd(argc, argv, &server_addr, &listen_addr, &send_recv_type);
+    ret = parse_cmd(argc, argv, &server_addr, &listen_addr);
     if (ret != 0) {
         goto err;
     }
@@ -626,7 +606,7 @@ int main(int argc, char **argv)
     /* Client-Server initialization */
     if (server_addr == NULL) {
         /* Server side */
-        ret = run_server(ucp_context, ucp_worker, listen_addr, send_recv_type);
+        ret = run_server(ucp_context, ucp_worker, listen_addr);
     }
 
     ucp_worker_destroy(ucp_worker);
