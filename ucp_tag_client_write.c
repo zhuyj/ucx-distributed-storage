@@ -4,6 +4,7 @@
 #include <arpa/inet.h> /* inet_addr */
 #include <unistd.h>    /* getopt */
 #include <stdlib.h>    /* atoi */
+#include <sys/time.h>
 
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50
@@ -30,8 +31,8 @@ static void send_cb(void *request, ucs_status_t status)
 
     req->complete = 1;
 
-    printf("send_cb returned with status %d (%s)\n",
-           status, ucs_status_string(status));
+//    printf("send_cb returned with status %d (%s)\n",
+//           status, ucs_status_string(status));
 }
 
 /**
@@ -147,9 +148,9 @@ static void tag_recv_cb(void *request, ucs_status_t status,
 
     req->complete = 1;
 
-    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
-           "sender_tag: 0x%lX\n",
-           status, ucs_status_string(status), info->length, info->sender_tag);
+//    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
+//           "sender_tag: 0x%lX\n",
+//           status, ucs_status_string(status), info->length, info->sender_tag);
 }
 
 static int generate_test_string(char *str, int size)
@@ -185,7 +186,10 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     size_t length = 64;
     ucs_status_t status;
     int ret = 0;
+    struct timeval tv_begin, tv_end;
 
+    if (gettimeofday(&tv_begin, NULL))
+       printf("get time failed\n");
     /* send iorequest */
     /* Client sends a message to the server using the Tag-Matching API */
     request = ucp_tag_send_nb(ep, &length, sizeof(size_t),
@@ -199,11 +203,12 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         ret = -1;
     }
 
-    printf("line:%d, send io request len:%zu\n", __LINE__, length);
+//    printf("line:%d, send io request len:%zu\n", __LINE__, length);
 
     /* send data*/
     recv_message = malloc(length + 1);
-    generate_test_string(recv_message, length);
+//    generate_test_string(recv_message, length);
+    memcpy(recv_message, "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJK", 64);
     request = ucp_tag_send_nb(ep, recv_message, length,
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
@@ -214,7 +219,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         ret = -1;
     }
-    printf("line:%d, send data:%s\n\n", __LINE__, recv_message);
+//    printf("line:%d, send data:%s\n\n", __LINE__, recv_message);
     free(recv_message);
 
     /* recv ioresponse */
@@ -230,9 +235,11 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         ret = -1;
     }
-    printf("line:%d, len:%s\n\n", __LINE__, recv_message);
+//    printf("line:%d, len:%s\n\n", __LINE__, recv_message);
     free(recv_message);
-
+    if(gettimeofday(&tv_end, NULL))
+        printf("get time failed\n");
+    printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000 + tv_end.tv_usec - tv_begin.tv_sec * 1000 - tv_begin.tv_usec);
     return ret;
 }
 
