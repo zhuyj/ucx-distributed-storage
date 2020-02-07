@@ -40,9 +40,9 @@ static void tag_recv_cb(void *request, ucs_status_t status,
 
     req->complete = 1;
 
-    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
-           "sender_tag: 0x%lX\n",
-           status, ucs_status_string(status), info->length, info->sender_tag);
+//    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
+//           "sender_tag: 0x%lX\n",
+//           status, ucs_status_string(status), info->length, info->sender_tag);
 }
 
 /**
@@ -55,8 +55,8 @@ static void send_cb(void *request, ucs_status_t status)
 
     req->complete = 1;
 
-    printf("send_cb returned with status %d (%s)\n",
-           status, ucs_status_string(status));
+//    printf("send_cb returned with status %d (%s)\n",
+//           status, ucs_status_string(status));
 }
 
 /**
@@ -147,7 +147,7 @@ static int generate_test_string(char *str, int size)
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char *recv_message = NULL;
+    char recv_message[65] = "";
     test_req_t *request;
     ucs_status_t status;
     int ret = 0;
@@ -165,12 +165,11 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
-    printf("line:%d, recv io request, lenth:%zu, \n", __LINE__, length);
-    recv_message = malloc(length + 1);
-    if (!recv_message)
-        return -1;
+//    printf("line:%d, recv io request, lenth:%zu, \n", __LINE__, length);
 
-    generate_test_string(recv_message, length);
+//    generate_test_string(recv_message, length);
+    snprintf(recv_message, 65,
+	 "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJK");
     request = ucp_tag_send_nb(ep, recv_message, length,
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
@@ -179,14 +178,11 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     if (status != UCS_OK){
         fprintf(stderr, "unable to send UCX message (%s)\n",
                 ucs_status_string(status));
-        free(recv_message);
         return -1;
     }
-    printf("line:%d, send Data:%s\n", __LINE__, recv_message);
-    free(recv_message);
+//    printf("line:%d, send Data:%s\n", __LINE__, recv_message);
 
-    printf("line:%d, send io response\n", __LINE__);
-    recv_message = malloc(11);
+//    printf("line:%d, send io response\n", __LINE__);
     snprintf(recv_message, 11, "ioresponse");
     request = ucp_tag_send_nb(ep, recv_message, 10,
                               ucp_dt_make_contig(1), TAG,
@@ -196,11 +192,8 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     if (status != UCS_OK){
         fprintf(stderr, "unable to send UCX message (%s)\n",
                 ucs_status_string(status));
-        free(recv_message);
         return -1;
     }
-
-    free(recv_message);
 
     return ret;
 }

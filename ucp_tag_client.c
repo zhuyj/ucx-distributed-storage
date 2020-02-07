@@ -4,6 +4,7 @@
 #include <arpa/inet.h> /* inet_addr */
 #include <unistd.h>    /* getopt */
 #include <stdlib.h>    /* atoi */
+#include <sys/time.h>
 
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50
@@ -30,8 +31,8 @@ static void send_cb(void *request, ucs_status_t status)
 
     req->complete = 1;
 
-    printf("send_cb returned with status %d (%s)\n",
-           status, ucs_status_string(status));
+//    printf("send_cb returned with status %d (%s)\n",
+//           status, ucs_status_string(status));
 }
 
 /**
@@ -147,9 +148,9 @@ static void tag_recv_cb(void *request, ucs_status_t status,
 
     req->complete = 1;
 
-    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
-           "sender_tag: 0x%lX\n",
-           status, ucs_status_string(status), info->length, info->sender_tag);
+//    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
+//           "sender_tag: 0x%lX\n",
+//           status, ucs_status_string(status), info->length, info->sender_tag);
 }
 
 /**
@@ -159,12 +160,15 @@ static void tag_recv_cb(void *request, ucs_status_t status,
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char *recv_message = NULL;
+    char recv_message[65] = "";
     test_req_t *request;
     size_t length = 64;
     ucs_status_t status;
     int ret = 0;
 
+    struct timeval tv_begin, tv_end;
+
+    gettimeofday(&tv_begin, NULL);
     /* send iorequest */
     /* Client sends a message to the server using the Tag-Matching API */
     request = ucp_tag_send_nb(ep, &length, sizeof(size_t),
@@ -178,9 +182,8 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         ret = -1;
     }
 
-    printf("line:%d, send io request len:%zu\n", __LINE__, length);
+    //printf("line:%d, send io request len:%zu\n", __LINE__, length);
     /* recv data*/
-    recv_message = malloc(length + 1);
     request = ucp_tag_recv_nb(ucp_worker, recv_message, length,
                               ucp_dt_make_contig(1),
                               TAG, 0, tag_recv_cb);
@@ -192,12 +195,9 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         ret = -1;
     }
 
-    printf("line:%d, recv data:%s\n\n", __LINE__, recv_message);
-    free(recv_message);
+   // printf("line:%d, recv data:%s\n\n", __LINE__, recv_message);
 
     /* recv ioresponse */
-    recv_message = malloc(11);
-    memset(recv_message, 0, 11);
     request = ucp_tag_recv_nb(ucp_worker, recv_message, 10,
                               ucp_dt_make_contig(1),
                               TAG, 0, tag_recv_cb);
@@ -209,9 +209,10 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         ret = -1;
     }
 
-    printf("line:%d, len:%s\n\n", __LINE__, recv_message);
-    free(recv_message);
+    //printf("line:%d, len:%s\n\n", __LINE__, recv_message);
 
+    gettimeofday(&tv_end, NULL);
+    printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000 + tv_end.tv_usec - tv_begin.tv_sec * 1000 - tv_begin.tv_usec);
     return ret;
 }
 
