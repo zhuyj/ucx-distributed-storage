@@ -9,7 +9,6 @@
 #define IP_STRING_LEN      50
 #define PORT_STRING_LEN    8
 #define TAG                0xCAFE
-#define COMM_TYPE_DEFAULT  "STREAM"
 
 static uint16_t server_port = DEFAULT_PORT;
 
@@ -266,11 +265,6 @@ static void usage()
     fprintf(stderr, " -p Port number to listen/connect to (default = %d). "
                     "0 on the server side means select a random port and print it\n",
                     DEFAULT_PORT);
-    fprintf(stderr, " -c Communication type for the client and server. "
-                    " Valid values are:\n"
-                    "     'stream' : Stream API\n"
-                    "     'tag'    : Tag API\n"
-                    "    If not specified, %s API will be used.\n", COMM_TYPE_DEFAULT);
     fprintf(stderr, "\n");
 }
 
@@ -285,7 +279,7 @@ static int parse_cmd(int argc, char *const argv[], char **server_addr,
 
     opterr = 0;
 
-    while ((c = getopt(argc, argv, "a:l:p:c:")) != -1) {
+    while ((c = getopt(argc, argv, "a:l:p:")) != -1) {
         switch (c) {
         case 'a':
             *server_addr = optarg;
