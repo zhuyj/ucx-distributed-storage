@@ -167,8 +167,10 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     int ret = 0;
 
     struct timeval tv_begin, tv_end;
+    struct timeval tv_send, tv_recv;
 
     gettimeofday(&tv_begin, NULL);
+    gettimeofday(&tv_send, NULL);
     /* send iorequest */
     /* Client sends a message to the server using the Tag-Matching API */
     request = ucp_tag_send_nb(ep, &length, sizeof(size_t),
@@ -194,6 +196,8 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         ret = -1;
     }
+    gettimeofday(&tv_recv, NULL);
+    printf("tv_recv - tv_send:%lu\n", tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec);
 
    // printf("line:%d, recv data:%s\n\n", __LINE__, recv_message);
 
@@ -212,7 +216,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     //printf("line:%d, len:%s\n\n", __LINE__, recv_message);
 
     gettimeofday(&tv_end, NULL);
-    printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000 + tv_end.tv_usec - tv_begin.tv_sec * 1000 - tv_begin.tv_usec);
+    printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000000 + tv_end.tv_usec - tv_begin.tv_sec * 1000000 - tv_begin.tv_usec);
     return ret;
 }
 

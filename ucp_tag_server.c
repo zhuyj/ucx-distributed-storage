@@ -5,6 +5,7 @@
 #include <unistd.h>    /* getopt */
 #include <stdlib.h>    /* atoi */
 #include <string.h>
+#include <sys/time.h>
 
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50

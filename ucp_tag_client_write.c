@@ -239,7 +239,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     free(recv_message);
     if(gettimeofday(&tv_end, NULL))
         printf("get time failed\n");
-    printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000 + tv_end.tv_usec - tv_begin.tv_sec * 1000 - tv_begin.tv_usec);
+    printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000000 + tv_end.tv_usec - tv_begin.tv_sec * 1000000 - tv_begin.tv_usec);
     return ret;
 }
 
