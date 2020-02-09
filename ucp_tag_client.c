@@ -160,7 +160,7 @@ static void tag_recv_cb(void *request, ucs_status_t status,
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char *recv_message = NULL;
+    char recv_message[256 * 1024] = "";
     test_req_t *request;
     size_t length = 256 * 1024;
     ucs_status_t status;
@@ -169,7 +169,6 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     struct timeval tv_begin, tv_end;
     struct timeval tv_send, tv_recv;
 
-    recv_message = malloc(length + 1);
     gettimeofday(&tv_begin, NULL);
     gettimeofday(&tv_send, NULL);
     /* send iorequest */
@@ -185,7 +184,6 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         ret = -1;
     }
 
-    //printf("line:%d, send io request len:%zu\n", __LINE__, length);
     /* recv data*/
     request = ucp_tag_recv_nb(ucp_worker, recv_message, length,
                               ucp_dt_make_contig(1),
@@ -200,8 +198,6 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     gettimeofday(&tv_recv, NULL);
     printf("bandwidth:%lu\n", (length * 8 * 1000000) / (tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec));
 
-//    printf("line:%d, recv data:%s\n\n", __LINE__, recv_message);
-
     /* recv ioresponse */
     request = ucp_tag_recv_nb(ucp_worker, recv_message, 10,
                               ucp_dt_make_contig(1),
@@ -214,10 +210,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         ret = -1;
     }
 
-    //printf("line:%d, len:%s\n\n", __LINE__, recv_message);
-
     gettimeofday(&tv_end, NULL);
-    free(recv_message);
     printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000000 + tv_end.tv_usec - tv_begin.tv_sec * 1000000 - tv_begin.tv_usec);
     return ret;
 }

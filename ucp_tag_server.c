@@ -24,7 +24,6 @@ typedef struct ucx_server_ctx {
     ucp_listener_h              listener;
 } ucx_server_ctx_t;
 
-
 /**
  * Stream request context. Holds a value to indicate whether or not the
  * request is completed.
@@ -166,9 +165,6 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
-//    printf("line:%d, recv io request, lenth:%zu, \n", __LINE__, length);
-
-//    recv_message = malloc(length + 1);
 //    generate_test_string(recv_message, length);
     request = ucp_tag_send_nb(ep, recv_message, length,
                               ucp_dt_make_contig(1), TAG,
@@ -180,11 +176,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         return -1;
     }
-//    free(recv_message);
-//    printf("line:%d, send Data:%s\n", __LINE__, recv_message);
 
-//    printf("line:%d, send io response\n", __LINE__);
-//    recv_message = malloc(11);
     snprintf(recv_message, 11, "ioresponse");
     request = ucp_tag_send_nb(ep, recv_message, 10,
                               ucp_dt_make_contig(1), TAG,
@@ -196,7 +188,6 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         return -1;
     }
-//    free(recv_message);
 
     return ret;
 }
@@ -251,6 +242,7 @@ static void usage()
     fprintf(stderr, " -p Port number to listen/connect to (default = %d). "
                     "0 on the server side means select a random port and print it\n",
                     DEFAULT_PORT);
+    fprintf(stderr, " -f the number of the requests in flight");
     fprintf(stderr, "\n");
 }
 
@@ -258,20 +250,27 @@ static void usage()
  * Parse the command line arguments.
  */
 static int parse_cmd(int argc, char *const argv[], char **server_addr,
-                     char **listen_addr)
+                     char **listen_addr, int *flight_requests)
 {
     int c = 0;
     int port;
 
     opterr = 0;
 
-    while ((c = getopt(argc, argv, "a:l:p:")) != -1) {
+    while ((c = getopt(argc, argv, "a:l:p:f:")) != -1) {
         switch (c) {
         case 'a':
             *server_addr = optarg;
             break;
-       case 'l':
+        case 'l':
             *listen_addr = optarg;
+            break;
+        case 'f':
+            *flight_requests = atoi(optarg);
+
+            if ((*flight_requests < 0) || (*flight_requests > 16384))
+                return -1;
+
             break;
         case 'p':
             port = atoi(optarg);
@@ -577,15 +576,17 @@ int main(int argc, char **argv)
     char *server_addr = NULL;
     char *listen_addr = NULL;
     int ret;
+    int flight_requests = 0;
 
     /* UCP objects */
     ucp_context_h ucp_context;
     ucp_worker_h  ucp_worker;
 
-    ret = parse_cmd(argc, argv, &server_addr, &listen_addr);
+    ret = parse_cmd(argc, argv, &server_addr, &listen_addr, &flight_requests);
     if (ret != 0) {
         goto err;
     }
+    printf("flight_requests:%d\n", flight_requests);
 
     /* Initialize the UCX required objects */
     ret = init_context(&ucp_context, &ucp_worker);
