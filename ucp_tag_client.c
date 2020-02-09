@@ -162,7 +162,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
     char *recv_message = NULL;
     test_req_t *request;
-    size_t length = 128 * 1024;
+    size_t length = 256 * 1024;
     ucs_status_t status;
     int ret = 0;
 
@@ -198,7 +198,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         ret = -1;
     }
     gettimeofday(&tv_recv, NULL);
-    printf("tv_recv - tv_send:%lu\n", tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec);
+    printf("bandwidth:%lu\n", (length * 8 * 1000000) / (tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec));
 
 //    printf("line:%d, recv data:%s\n\n", __LINE__, recv_message);
 
