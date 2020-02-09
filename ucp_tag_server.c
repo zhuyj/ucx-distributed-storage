@@ -148,7 +148,7 @@ static int generate_test_string(char *str, int size)
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char recv_message[65] = "";
+    char *recv_message = "";
     test_req_t *request;
     ucs_status_t status;
     int ret = 0;
@@ -168,9 +168,8 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 
 //    printf("line:%d, recv io request, lenth:%zu, \n", __LINE__, length);
 
-//    generate_test_string(recv_message, length);
-    snprintf(recv_message, 65,
-	 "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJK");
+    recv_message = malloc(length + 1);
+    generate_test_string(recv_message, length);
     request = ucp_tag_send_nb(ep, recv_message, length,
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
@@ -181,9 +180,11 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         return -1;
     }
+    free(recv_message);
 //    printf("line:%d, send Data:%s\n", __LINE__, recv_message);
 
 //    printf("line:%d, send io response\n", __LINE__);
+    recv_message = malloc(11);
     snprintf(recv_message, 11, "ioresponse");
     request = ucp_tag_send_nb(ep, recv_message, 10,
                               ucp_dt_make_contig(1), TAG,
@@ -195,6 +196,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         return -1;
     }
+    free(recv_message);
 
     return ret;
 }

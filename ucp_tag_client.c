@@ -160,15 +160,16 @@ static void tag_recv_cb(void *request, ucs_status_t status,
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char recv_message[65] = "";
+    char *recv_message = NULL;
     test_req_t *request;
-    size_t length = 64;
+    size_t length = 128 * 1024;
     ucs_status_t status;
     int ret = 0;
 
     struct timeval tv_begin, tv_end;
     struct timeval tv_send, tv_recv;
 
+    recv_message = malloc(length + 1);
     gettimeofday(&tv_begin, NULL);
     gettimeofday(&tv_send, NULL);
     /* send iorequest */
@@ -199,7 +200,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     gettimeofday(&tv_recv, NULL);
     printf("tv_recv - tv_send:%lu\n", tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec);
 
-   // printf("line:%d, recv data:%s\n\n", __LINE__, recv_message);
+//    printf("line:%d, recv data:%s\n\n", __LINE__, recv_message);
 
     /* recv ioresponse */
     request = ucp_tag_recv_nb(ucp_worker, recv_message, 10,
@@ -216,6 +217,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     //printf("line:%d, len:%s\n\n", __LINE__, recv_message);
 
     gettimeofday(&tv_end, NULL);
+    free(recv_message);
     printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000000 + tv_end.tv_usec - tv_begin.tv_sec * 1000000 - tv_begin.tv_usec);
     return ret;
 }
