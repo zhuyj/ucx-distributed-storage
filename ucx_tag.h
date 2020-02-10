@@ -266,7 +266,7 @@ err:
     return -1;
 }
 
-static int barrier(int oob_sock)
+int barrier(int oob_sock)
 {
     int dummy = 0;
     ssize_t res;
