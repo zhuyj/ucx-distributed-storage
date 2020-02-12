@@ -212,6 +212,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 
     gettimeofday(&tv_end, NULL);
     printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000000 + tv_end.tv_usec - tv_begin.tv_sec * 1000000 - tv_begin.tv_usec);
+    printf("recv_message:%s\n", recv_message);
     return ret;
 }
 

@@ -23,7 +23,7 @@ static uint16_t server_port = DEFAULT_PORT;
 typedef struct ucx_server_ctx {
     volatile ucp_conn_request_h conn_request;
     ucp_listener_h              listener;
-    ucp_context_h               ucp_context;
+    ucp_worker_h                ucp_data_worker;
 } ucx_server_ctx_t;
 
 /**
@@ -360,27 +360,18 @@ static void server_conn_handle_cb(ucp_conn_request_h conn_request, void *arg)
     ucs_status_t status;
 
     if (context->conn_request == NULL) {
-        ucp_worker_h     ucp_data_worker;
         ucp_ep_h         server_ep;
-        int              ret;
         ucs_status_t     status;
 
         context->conn_request = conn_request;
-        ret = init_worker(context->ucp_context, &ucp_data_worker);
-        if (ret != 0)
-            goto err;
-
-        status = server_create_ep(ucp_data_worker, context->conn_request, &server_ep);
+        status = server_create_ep(context->ucp_data_worker, context->conn_request, &server_ep);
         if (status != UCS_OK) {
-            ret = -1;
             goto err_worker;
         }
 
-        client_server_communication(ucp_data_worker, server_ep);
+        client_server_communication(context->ucp_data_worker, server_ep);
 
 err_worker:
-        ucp_worker_destroy(ucp_data_worker);
-err:
         context->conn_request = NULL;
     } else {
         /* The server is already handling a connection request from a client,
@@ -475,13 +466,21 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
                       char *listen_addr)
 {
     ucx_server_ctx_t context;
+    ucp_worker_h     ucp_data_worker;
     ucs_status_t     status;
     int              ret;
+
+    /* Create a data worker (to be used for data exchange between the server
+     * and the client after the connection between them was established) */
+    ret = init_worker(ucp_context, &ucp_data_worker);
+    if (ret != 0) {
+        goto err;
+    }
 
     /* Initialiaze the server's context. */
     context.conn_request = NULL;
 
-    memcpy(&context.ucp_context, &ucp_context, sizeof(ucp_context_h));
+    memcpy(&context.ucp_data_worker, &ucp_data_worker, sizeof(ucp_worker_h));
 
     /* Create a listener on the worker created at first. The 'connection
      * worker' - used for connection establishment between client and server.
@@ -505,6 +504,8 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
     ucp_listener_destroy(context.listener);
 
 err_worker:
+    ucp_worker_destroy(ucp_data_worker);
+err:
     return ret;
 }
 
