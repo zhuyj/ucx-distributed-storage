@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include "ucx_tag.h"
+#include <pthread.h>
 
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50
@@ -350,6 +351,25 @@ static ucs_status_t server_create_ep(ucp_worker_h data_worker,
                                      ucp_conn_request_h conn_request,
                                      ucp_ep_h *server_ep);
 
+ucx_server_ctx_t g_context[256];
+int              g_count = 0;
+
+void *handle_client_conn_worker(void *arg)
+{
+    ucx_server_ctx_t *context = arg;
+    ucp_ep_h         server_ep;
+    ucs_status_t     status;
+
+    status = server_create_ep(context->ucp_data_worker, context->conn_request, &server_ep);
+    if (status != UCS_OK) {
+        goto err_worker;
+    }
+
+    client_server_communication(context->ucp_data_worker, server_ep);
+
+err_worker:
+    return NULL;
+}
 /**
  * The callback on the server side which is invoked upon receiving a connection
  * request from the client.
@@ -360,19 +380,19 @@ static void server_conn_handle_cb(ucp_conn_request_h conn_request, void *arg)
     ucs_status_t status;
 
     if (context->conn_request == NULL) {
-        ucp_ep_h         server_ep;
-        ucs_status_t     status;
+        pthread_t    ntid;
+        int          ret;
 
         context->conn_request = conn_request;
-        status = server_create_ep(context->ucp_data_worker, context->conn_request, &server_ep);
-        if (status != UCS_OK) {
-            goto err_worker;
-        }
 
-        client_server_communication(context->ucp_data_worker, server_ep);
+        memcpy(&g_context[g_count], context, sizeof(ucx_server_ctx_t));
+        ret = pthread_create(&ntid, NULL, handle_client_conn_worker, &g_context[g_count]);
+        if (ret != 0)
+            fprintf(stderr, "can't create thread: %s\n", strerror(ret));
 
-err_worker:
         context->conn_request = NULL;
+
+        g_count = (g_count + 1) % 256;
     } else {
         /* The server is already handling a connection request from a client,
          * reject this new one */
