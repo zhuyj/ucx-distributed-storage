@@ -6,6 +6,7 @@
 #include <stdlib.h>    /* atoi */
 #include <string.h>
 #include <sys/time.h>
+#include "ucx_tag.h"
 
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50
@@ -117,27 +118,6 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
     ucp_request_free(request);
 
     return status;
-}
-
-static int generate_test_string(char *str, int size)
-{
-    char *tmp_str;
-    int i;
-
-    tmp_str = calloc(1, size);
-    if (!tmp_str)
-        return -1;
-
-    memset(tmp_str, 0, size);
-
-    for (i = 0; i < (size - 1); ++i) {
-        tmp_str[i] = 'A' + (i % 26);
-    }
-
-    memcpy(str, tmp_str, size);
-
-    free(tmp_str);
-    return 0;
 }
 
 /**

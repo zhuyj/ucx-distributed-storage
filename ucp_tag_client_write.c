@@ -5,6 +5,7 @@
 #include <unistd.h>    /* getopt */
 #include <stdlib.h>    /* atoi */
 #include <sys/time.h>
+#include "ucx_tag.h"
 
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50
@@ -151,27 +152,6 @@ static void tag_recv_cb(void *request, ucs_status_t status,
 //    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
 //           "sender_tag: 0x%lX\n",
 //           status, ucs_status_string(status), info->length, info->sender_tag);
-}
-
-static int generate_test_string(char *str, int size)
-{
-    char *tmp_str;
-    int i;
-
-    tmp_str = calloc(1, size);
-    if (!tmp_str)
-        return -1;
-
-    memset(tmp_str, 0, size);
-
-    for (i = 0; i < (size - 1); ++i) {
-        tmp_str[i] = 'A' + (i % 26);
-    }
-
-    memcpy(str, tmp_str, size);
-
-    free(tmp_str);
-    return 0;
 }
 
 /**
