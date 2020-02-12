@@ -350,8 +350,8 @@ static int init_worker(ucp_context_h ucp_context, ucp_worker_h *ucp_worker)
 static ucs_status_t server_create_ep(ucp_worker_h data_worker,
                                      ucp_conn_request_h conn_request,
                                      ucp_ep_h *server_ep);
-
-ucx_server_ctx_t g_context[256];
+#define  MAX_THREAD_NUM   256
+ucx_server_ctx_t g_context[MAX_THREAD_NUM];
 int              g_count = 0;
 
 void *handle_client_conn_worker(void *arg)
@@ -392,7 +392,7 @@ static void server_conn_handle_cb(ucp_conn_request_h conn_request, void *arg)
 
         context->conn_request = NULL;
 
-        g_count = (g_count + 1) % 256;
+        g_count = (g_count + 1) % MAX_THREAD_NUM;
     } else {
         /* The server is already handling a connection request from a client,
          * reject this new one */
