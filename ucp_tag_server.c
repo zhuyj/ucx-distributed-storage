@@ -146,6 +146,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
+//    generate_test_string(recv_message, length);
     request = ucp_tag_send_nb(ep, recv_message, length,
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
@@ -354,16 +355,14 @@ static void server_conn_handle_cb(ucp_conn_request_h conn_request, void *arg)
     ucx_server_ctx_t *context = arg;
     ucs_status_t status;
 
-    if (context[0].conn_request == NULL) {
-        context[0].conn_request = conn_request;
-    } else if (context[1].conn_request == NULL) {
-        context[1].conn_request = conn_request;
+    if (context->conn_request == NULL) {
+        context->conn_request = conn_request;
     } else {
         /* The server is already handling a connection request from a client,
          * reject this new one */
         printf("Rejecting a connection request. "
                "Only one client at a time is supported.\n");
-        status = ucp_listener_reject(context[0].listener, conn_request);
+        status = ucp_listener_reject(context->listener, conn_request);
         if (status != UCS_OK) {
             fprintf(stderr, "server failed to reject a connection request: (%s)\n",
                     ucs_status_string(status));
@@ -447,13 +446,11 @@ out:
     return status;
 }
 
-#define MAX_SERVER_THREAD    256
-
 typedef struct conn_info {
     volatile ucp_conn_request_h conn_request;
-    ucp_context_h               ucp_context;
+    ucp_context_h ucp_context;
 } conn_info_t;
-conn_info_t g_conn_info[MAX_SERVER_THREAD];
+conn_info_t g_conn_info[256];
 
 void *handle_client_conn_worker(void *arg)
 {
@@ -483,21 +480,20 @@ void *handle_client_conn_worker(void *arg)
 static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
                       char *listen_addr)
 {
-    ucx_server_ctx_t context[2];
+    ucx_server_ctx_t context;
     ucs_status_t     status;
     int              ret;
     pthread_t        ntid;
     int              count = 0;
 
     /* Initialiaze the server's context. */
-    context[0].conn_request = NULL;
-    context[1].conn_request = NULL;
+    context.conn_request = NULL;
 
     /* Create a listener on the worker created at first. The 'connection
      * worker' - used for connection establishment between client and server.
      * This listener will stay open for listening to incoming connection
      * requests from the client */
-    status = start_server(ucp_worker, context, &context[0].listener, listen_addr);
+    status = start_server(ucp_worker, &context, &context.listener, listen_addr);
     if (status != UCS_OK) {
         ret = -1;
         goto err_worker;
@@ -509,12 +505,11 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
          * If there are multiple clients for which the server's connection request
          * callback is involked, i.e. several clients are trying to connect in
          * parallel, the server will handle only the first one and reject the rest */
-        while ((context[0].conn_request == NULL) && (context[1].conn_request == NULL)) {
+        while (context.conn_request == NULL) {
             ucp_worker_progress(ucp_worker);
         }
 
-        g_conn_info[count].conn_request =
-                context[0].conn_request? context[0].conn_request:context[1].conn_request;
+        g_conn_info[count].conn_request = context.conn_request;
         memcpy(&(g_conn_info[count].ucp_context), &ucp_context, sizeof(ucp_context_h));
 
         ret = pthread_create(&ntid, NULL, handle_client_conn_worker, &g_conn_info[count]);
@@ -522,14 +517,13 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
             printf("can't create thread: %s\n", strerror(ret));
 
         /* Reinitialize the server's context to be used for the next client */
-        context[0].conn_request = NULL;
-        context[1].conn_request = NULL;
-        count = (count+1) % MAX_SERVER_THREAD;
+        context.conn_request = NULL;
+        count = (count+1) % 256;
 
         printf("Waiting for connection...\n");
     }
 
-    ucp_listener_destroy(context[0].listener);
+    ucp_listener_destroy(context.listener);
 
 err_worker:
     return ret;
