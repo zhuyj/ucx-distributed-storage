@@ -6,7 +6,6 @@
 #include <stdlib.h>    /* atoi */
 #include <string.h>
 #include <sys/time.h>
-#include <pthread.h>
 
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50
@@ -466,45 +465,21 @@ out:
     return status;
 }
 
-typedef struct conn_info {
-    volatile ucp_conn_request_h conn_request;
-    ucp_context_h ucp_context;
-} conn_info_t;
-conn_info_t g_conn_info[256];
-
-void *handle_client_conn_worker(void *arg)
+static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
+                      char *listen_addr)
 {
-    conn_info_t      *conn_info = arg;
+    ucx_server_ctx_t context;
     ucp_worker_h     ucp_data_worker;
     ucp_ep_h         server_ep;
     ucs_status_t     status;
     int              ret;
 
-    ret = init_worker(conn_info->ucp_context, &ucp_data_worker);
-    if (ret != 0)
-        return NULL;
-
-    status = server_create_ep(ucp_data_worker, conn_info->conn_request, &server_ep);
-    if (status != UCS_OK) {
-        ucp_worker_destroy(ucp_data_worker);
-        return NULL;
+    /* Create a data worker (to be used for data exchange between the server
+     * and the client after the connection between them was established) */
+    ret = init_worker(ucp_context, &ucp_data_worker);
+    if (ret != 0) {
+        goto err;
     }
-
-    client_server_communication(ucp_data_worker, server_ep);
-
-    ucp_worker_destroy(ucp_data_worker);
-
-    return NULL;
-}
-
-static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
-                      char *listen_addr)
-{
-    ucx_server_ctx_t context;
-    ucs_status_t     status;
-    int              ret;
-    pthread_t        ntid;
-    int              count = 0;
 
     /* Initialiaze the server's context. */
     context.conn_request = NULL;
@@ -529,23 +504,30 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
             ucp_worker_progress(ucp_worker);
         }
 
-        g_conn_info[count].conn_request = context.conn_request;
-        memcpy(&(g_conn_info[count].ucp_context), &ucp_context, sizeof(ucp_context_h));
+        /* Server creates an ep to the client on the data worker.
+         * This is not the worker the listener was created on.
+         * The client side should have initiated the connection, leading
+         * to this ep's creation */
+        status = server_create_ep(ucp_data_worker, context.conn_request,
+                                  &server_ep);
+        if (status != UCS_OK) {
+            ret = -1;
+            goto err_listener;
+        }
 
-        ret = pthread_create(&ntid, NULL, handle_client_conn_worker, &g_conn_info[count]);
-        if (ret != 0)
-            printf("can't create thread: %s\n", strerror(ret));
+        client_server_communication(ucp_data_worker, server_ep);
 
         /* Reinitialize the server's context to be used for the next client */
         context.conn_request = NULL;
-        count = (count+1) % 256;
 
         printf("Waiting for connection...\n");
     }
 
+err_listener:
     ucp_listener_destroy(context.listener);
-
 err_worker:
+    ucp_worker_destroy(ucp_data_worker);
+err:
     return ret;
 }
 
