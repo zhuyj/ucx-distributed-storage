@@ -350,24 +350,27 @@ static int init_worker(ucp_context_h ucp_context, ucp_worker_h *ucp_worker)
 static ucs_status_t server_create_ep(ucp_worker_h data_worker,
                                      ucp_conn_request_h conn_request,
                                      ucp_ep_h *server_ep);
-#define  MAX_THREAD_NUM  32
+
+#define    MAX_THREAD_NUM    32
+
 ucx_server_ctx_t g_context[MAX_THREAD_NUM];
 int              g_count = 0;
- ucp_worker_h     ucp_data_worker[MAX_THREAD_NUM];
+ucp_worker_h     ucp_data_worker[MAX_THREAD_NUM];
+
 void *handle_client_conn_worker(void *arg)
 {
     ucx_server_ctx_t *context = arg;
     ucp_ep_h         server_ep;
     ucs_status_t     status;
 
-    status = server_create_ep(context->ucp_data_worker, context->conn_request, &server_ep);
+    status = server_create_ep(context->ucp_data_worker, context->conn_request,
+                              &server_ep);
     if (status != UCS_OK) {
-        goto err_worker;
+        return NULL;
     }
 
     client_server_communication(context->ucp_data_worker, server_ep);
 
-err_worker:
     return NULL;
 }
 /**
@@ -386,7 +389,8 @@ static void server_conn_handle_cb(ucp_conn_request_h conn_request, void *arg)
         context->conn_request = conn_request;
         context->ucp_data_worker = ucp_data_worker[g_count];
         memcpy(&g_context[g_count], context, sizeof(ucx_server_ctx_t));
-        ret = pthread_create(&ntid, NULL, handle_client_conn_worker, &g_context[g_count]);
+        ret = pthread_create(&ntid, NULL, handle_client_conn_worker,
+                             &g_context[g_count]);
         if (ret != 0)
             fprintf(stderr, "can't create thread: %s\n", strerror(ret));
 
@@ -588,7 +592,6 @@ int main(int argc, char **argv)
     if (ret != 0) {
         goto err;
     }
-    printf("flight_requests:%d\n", flight_requests);
 
     /* Initialize the UCX required objects */
     ret = init_context(&ucp_context, &ucp_worker);
