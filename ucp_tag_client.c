@@ -164,7 +164,6 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     test_req_t *request;
     size_t length = 256 * 1024;
     ucs_status_t status;
-    int ret = 0;
 
     struct timeval tv_begin, tv_end;
     struct timeval tv_send, tv_recv;
@@ -181,7 +180,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     if (status != UCS_OK){
         fprintf(stderr, "unable to send UCX message (%s)\n",
                 ucs_status_string(status));
-        ret = -1;
+        return -1;
     }
 
     /* recv data*/
@@ -193,7 +192,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     if (status != UCS_OK){
         fprintf(stderr, "unable to receive UCX message (%s)\n",
                 ucs_status_string(status));
-        ret = -1;
+        return -1;
     }
     gettimeofday(&tv_recv, NULL);
     printf("bandwidth:%lu\n", (length * 8 * 1000000) / (tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec));
@@ -207,13 +206,13 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     if (status != UCS_OK){
         fprintf(stderr, "unable to receive UCX message (%s)\n",
                 ucs_status_string(status));
-        ret = -1;
+        return -1;
     }
 
     gettimeofday(&tv_end, NULL);
     printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000000 + tv_end.tv_usec - tv_begin.tv_sec * 1000000 - tv_begin.tv_usec);
     printf("recv_message:%s\n", recv_message);
-    return ret;
+    return 0;
 }
 
 /**
