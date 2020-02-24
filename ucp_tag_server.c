@@ -318,9 +318,6 @@ static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep)
     /* Client-Server communication via Tag-Matching API */
     ret = send_recv_tag(worker, ep);
 
-    /* Close the endpoint to the peer */
-    ep_close(worker, ep);
-
     return ret;
 }
 
@@ -363,6 +360,8 @@ void *handle_client_conn_worker(void *arg)
     ucp_ep_h         server_ep;
     ucs_status_t     status;
 
+    pthread_detach(pthread_self());
+
     status = server_create_ep(context->ucp_data_worker, context->conn_request,
                               &server_ep);
     if (status != UCS_OK) {
@@ -370,6 +369,9 @@ void *handle_client_conn_worker(void *arg)
     }
 
     client_server_communication(context->ucp_data_worker, server_ep);
+
+    /* Close the endpoint to the peer */
+    ep_close(context->ucp_data_worker, server_ep);
 
     return NULL;
 }
