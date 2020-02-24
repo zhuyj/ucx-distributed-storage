@@ -384,7 +384,7 @@ static int init_context(ucp_context_h *ucp_context, ucp_worker_h *ucp_worker)
     ucp_params.field_mask   = UCP_PARAM_FIELD_FEATURES     |
                               UCP_PARAM_FIELD_REQUEST_SIZE |
                               UCP_PARAM_FIELD_REQUEST_INIT;
-    ucp_params.features     = UCP_FEATURE_STREAM | UCP_FEATURE_TAG;
+    ucp_params.features     = UCP_FEATURE_TAG;
     ucp_params.request_size = sizeof(test_req_t);
     ucp_params.request_init = request_init;
 
