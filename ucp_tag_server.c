@@ -132,7 +132,6 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     char recv_message[256 * 1024] = "";
     test_req_t *request;
     ucs_status_t status;
-    int ret = 0;
     size_t length;
 
     /* Server receives a message from the client using the Tag-Matching API */
@@ -171,7 +170,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
-    return ret;
+    return 0;
 }
 
 /**
@@ -313,12 +312,8 @@ static char* sockaddr_get_port_str(const struct sockaddr_storage *sock_addr,
 
 static int client_server_communication(ucp_worker_h worker, ucp_ep_h ep)
 {
-    int ret;
-
     /* Client-Server communication via Tag-Matching API */
-    ret = send_recv_tag(worker, ep);
-
-    return ret;
+    return send_recv_tag(worker, ep);
 }
 
 /**
