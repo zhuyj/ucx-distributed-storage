@@ -390,7 +390,7 @@ static void server_conn_handle_cb(ucp_conn_request_h conn_request, void *arg)
 
         context->conn_request = conn_request;
         context->ucp_data_worker = ucp_data_worker[g_count];
-        memcpy(&g_context[g_count], context, sizeof(ucx_server_ctx_t));
+        g_context[g_count] = *context;
         ret = pthread_create(&ntid, NULL, handle_client_conn_worker,
                              &g_context[g_count]);
         if (ret != 0)
