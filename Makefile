@@ -11,22 +11,14 @@ BUILD_FILES=ucp_stream_server.c \
 		ucp_tag_server_write.c \
 		ucp_tag_client_write.c
 
-BUILD_BIN_FILES=tag_server_read \
-		tag_client_read \
-		tag_server_write \
-		tag_client_write \
-		server \
-		client
-
 #export LD_LIBRARY_PATH=${UCX_INSTALL_DIR}/lib/:${LD_LIBRARY_PATH}
 all:${BUILD_FILES}
-	gcc -o stream_server ucp_stream_server.c -I ${INCLUDE_DIR} -L ${LIB_DIR} ${FLAGS} ${EXTRA_FLAGS}
-	gcc -o stream_client ucp_stream_client.c -I ${INCLUDE_DIR} -L ${LIB_DIR} ${FLAGS}
-	gcc -o tag_server_read ucp_tag_server_read.c -I ${INCLUDE_DIR} -L ${LIB_DIR} ${FLAGS} ${EXTRA_FLAGS}
-	gcc -o tag_client_read ucp_tag_client_read.c -I ${INCLUDE_DIR} -L ${LIB_DIR} ${FLAGS}
-	gcc -o tag_server_write ucp_tag_server_write.c -I ${INCLUDE_DIR} -L ${LIB_DIR} ${FLAGS}
-	gcc -o tag_client_write ucp_tag_client_write.c -I ${INCLUDE_DIR} -L ${LIB_DIR} ${FLAGS}
+	for SOURCE_ENTRY in ${BUILD_FILES}; do \
+		BIN_FILE=`echo $${SOURCE_ENTRY}|awk -F "." '{print $$1}'`; \
+		gcc -o $${BIN_FILE} $${SOURCE_ENTRY} -I ${INCLUDE_DIR} -L ${LIB_DIR} ${FLAGS} ${EXTRA_FLAGS}; \
+	done
 clean::
-	for BIN_ENTRY in ${BUILD_BIN_FILES}; do \
-		rm -f $$(pwd)/$${BIN_ENTRY}; \
+	for SOURCE_ENTRY in ${BUILD_FILES}; do \
+		BIN_FILE=`echo $${SOURCE_ENTRY}|awk -F "." '{print $$1}'`; \
+		rm -f $$(pwd)/$${BIN_FILE}; \
 	done
