@@ -30,9 +30,10 @@ static void send_cb(void *request, ucs_status_t status)
     test_req_t *req = request;
 
     req->complete = 1;
-
-//    printf("send_cb returned with status %d (%s)\n",
-//           status, ucs_status_string(status));
+#ifdef UCX_DEBUG
+    printf("send_cb returned with status %d (%s)\n",
+           status, ucs_status_string(status));
+#endif
 }
 
 /**
@@ -147,10 +148,11 @@ static void tag_recv_cb(void *request, ucs_status_t status,
     test_req_t *req = request;
 
     req->complete = 1;
-
-//    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
-//           "sender_tag: 0x%lX\n",
-//           status, ucs_status_string(status), info->length, info->sender_tag);
+#ifdef UCX_DEBUG
+    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
+           "sender_tag: 0x%lX\n",
+           status, ucs_status_string(status), info->length, info->sender_tag);
+#endif
 }
 
 /**
@@ -164,12 +166,13 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     test_req_t *request;
     size_t length = 256 * 1024;
     ucs_status_t status;
-
+#ifdef UCX_DEBUG
     struct timeval tv_begin, tv_end;
     struct timeval tv_send, tv_recv;
 
     gettimeofday(&tv_begin, NULL);
     gettimeofday(&tv_send, NULL);
+#endif
     /* send iorequest */
     /* Client sends a message to the server using the Tag-Matching API */
     request = ucp_tag_send_nb(ep, &length, sizeof(size_t),
@@ -194,9 +197,10 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         return -1;
     }
+#ifdef UCX_DEBUG
     gettimeofday(&tv_recv, NULL);
     printf("bandwidth:%lu\n", (length * 8 * 1000000) / (tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec));
-
+#endif
     /* recv ioresponse */
     request = ucp_tag_recv_nb(ucp_worker, recv_message, 10,
                               ucp_dt_make_contig(1),
@@ -209,9 +213,11 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
+#ifdef UCX_DEBUG
     gettimeofday(&tv_end, NULL);
     printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000000 + tv_end.tv_usec - tv_begin.tv_sec * 1000000 - tv_begin.tv_usec);
     printf("recv_message:%s\n", recv_message);
+#endif
     return 0;
 }
 
@@ -424,7 +430,10 @@ int main(int argc, char **argv)
     if (ret != 0) {
         goto err;
     }
+
+#ifdef UCX_DEBUG
     printf("flight_requests:%d\n", flight_requests);
+#endif
 
     /* Initialize the UCX required objects */
     ret = init_context(&ucp_context, &ucp_worker);

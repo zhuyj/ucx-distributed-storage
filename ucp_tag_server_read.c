@@ -9,6 +9,9 @@
 #include "ucx_tag.h"
 #include <pthread.h>
 
+/**
+ * Default UCP listen port
+ */
 #define DEFAULT_PORT       13337
 #define IP_STRING_LEN      50
 #define PORT_STRING_LEN    8
@@ -35,17 +38,22 @@ typedef struct test_req {
     int complete;
 } test_req_t;
 
-
+/**
+ * Callback function for tag recv which is called after finishing receiving
+ * the message.
+ * The recv information will appear in this function.
+ */
 static void tag_recv_cb(void *request, ucs_status_t status,
                         ucp_tag_recv_info_t *info)
 {
     test_req_t *req = request;
 
     req->complete = 1;
-
-//    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
-//           "sender_tag: 0x%lX\n",
-//           status, ucs_status_string(status), info->length, info->sender_tag);
+#ifdef UCX_DEBUG
+    printf("tag_recv_cb returned with status %d (%s), length: %lu, "
+           "sender_tag: 0x%lX\n",
+           status, ucs_status_string(status), info->length, info->sender_tag);
+#endif
 }
 
 /**
@@ -57,9 +65,10 @@ static void send_cb(void *request, ucs_status_t status)
     test_req_t *req = request;
 
     req->complete = 1;
-
-//    printf("send_cb returned with status %d (%s)\n",
-//           status, ucs_status_string(status));
+#ifdef UCX_DEBUG
+    printf("send_cb returned with status %d (%s)\n",
+           status, ucs_status_string(status));
+#endif
 }
 
 /**
@@ -67,8 +76,8 @@ static void send_cb(void *request, ucs_status_t status)
  */
 static void err_cb(void *arg, ucp_ep_h ep, ucs_status_t status)
 {
-    printf("error handling callback was invoked with status %d (%s)\n",
-           status, ucs_status_string(status));
+    fprintf(stderr, "error handling callback was invoked with status %d (%s)\n",
+            status, ucs_status_string(status));
 }
 
 /**
@@ -76,10 +85,13 @@ static void err_cb(void *arg, ucp_ep_h ep, ucs_status_t status)
  */
 void set_listen_addr(const char *address_str, struct sockaddr_in *listen_addr)
 {
-    /* The server will listen on INADDR_ANY */
+    /*
+     * The server will listen on INADDR_ANY
+    */
     memset(listen_addr, 0, sizeof(struct sockaddr_in));
     listen_addr->sin_family      = AF_INET;
-    listen_addr->sin_addr.s_addr = (address_str) ? inet_addr(address_str) : INADDR_ANY;
+    listen_addr->sin_addr.s_addr =
+        address_str? inet_addr(address_str) : INADDR_ANY;
     listen_addr->sin_port        = htons(server_port);
 }
 
@@ -95,13 +107,15 @@ void set_connect_addr(const char *address_str, struct sockaddr_in *connect_addr)
 }
 
 /**
- * Progress the request until it completes.
+ * Progress the request until it completes. It is a non-blocking function.
  */
 static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
 {
     ucs_status_t status;
 
-    /*  if operation was completed immediately */
+    /**
+     * if operation was completed immediately
+    */
     if (request == NULL) {
         return UCS_OK;
     }
@@ -124,8 +138,10 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
 
 /**
  * Send and receive a message using the Tag-Matching API.
- * The client sends a message to the server and waits until the send it completed.
- * The server receives a message from the client and waits for its completion.
+ * The client sends a message to the server and waits until the send it
+ * completed.
+ * The server receives a message from the client and waits for its
+ * completion.
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
@@ -134,7 +150,10 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     ucs_status_t status;
     size_t length;
 
-    /* Server receives a message from the client using the Tag-Matching API */
+    /**
+     * Server receives a message from the client using the Tag-Matching API
+     * The client requests the size of message.
+     */
     request = ucp_tag_recv_nb(ucp_worker, &length, sizeof(size_t),
                               ucp_dt_make_contig(1),
                               TAG, 0, tag_recv_cb);
@@ -146,7 +165,11 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
-//    generate_test_string(recv_message, length);
+    /**
+     * The server sends the message to the client after finishing receiving
+     * the requested size. The size of the message is equal to the requested
+     * size.
+     */
     request = ucp_tag_send_nb(ep, recv_message, length,
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
