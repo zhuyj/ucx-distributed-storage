@@ -21,17 +21,12 @@ The steps to compile and run this ucx distributed storage app:
 
 8. run this ucx distributed storage app:
 
-     |-------------> Client128
-     |-------------> ClientN
-     |-------------> Client2
-   Server <--------> Client1
-
-   |--------| <-------------> Client128
+   +--------+ <-------------> Client128
    | Server | <-------------> ClientN
    |        | <-------------> Client2
-   |------- | <-------------> Client1
+   +------- + <-------------> Client1
 
-   The Server and Clients work very well.
+The Server and Clients work very well.
    The followings are the steps:
    Server:
    ./ucp_tag_server_read
