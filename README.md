@@ -21,12 +21,14 @@ The steps to compile and run this ucx distributed storage app:
 
 8. run this ucx distributed storage app:
 
-   Server <----------> Client1...128
+   Server <----------> Client(1...128)
 
 The Server and Clients work very well.
 
    The followings are the steps:
+
    Server:
+
    ./ucp_tag_server_read
 
    Client:
@@ -74,6 +76,7 @@ done
 The stream_send/stream_receive client/server APPs:
 
 ucp_server.c
+
 ucp_client.c
 
 Tag_send/tag_recv IO read APPs are ready.
@@ -87,6 +90,7 @@ Tag_send/tag_recv IO read APPs are ready.
     Receive ioresponse                    <----    send the ioresponse
 
 ucp_tag_server.c
+
 ucp_tag_client.c
 
 Tag_send/tag_recv IO write APPs are ready.
@@ -100,4 +104,5 @@ Tag_send/tag_recv IO write APPs are ready.
     Receive IOresponse  <--------  Send IOresponse
 
 ucp_tag_server_write.c
+
 ucp_tag_client_write.c
