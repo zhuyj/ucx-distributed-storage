@@ -157,8 +157,9 @@ static void tag_recv_cb(void *request, ucs_status_t status,
 
 /**
  * Send and receive a message using the Tag-Matching API.
- * The client sends a message to the server and waits until the send it completed.
- * The server receives a message from the client and waits for its completion.
+ * The client sends a message to the server and waits until the send it
+ * completed. The server receives a message from the client and waits
+ * for its completion.
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
@@ -173,8 +174,11 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     gettimeofday(&tv_begin, NULL);
     gettimeofday(&tv_send, NULL);
 #endif
-    /* send iorequest */
-    /* Client sends a message to the server using the Tag-Matching API */
+
+    /**
+     * Client sends the length of message to the server using the Tag-Matching
+     * API
+    */
     request = ucp_tag_send_nb(ep, &length, sizeof(size_t),
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
@@ -186,7 +190,7 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
-    /* recv data*/
+    /* recv the message with the request length */
     request = ucp_tag_recv_nb(ucp_worker, recv_message, length,
                               ucp_dt_make_contig(1),
                               TAG, 0, tag_recv_cb);
@@ -197,10 +201,12 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         return -1;
     }
+
 #ifdef UCX_DEBUG
     gettimeofday(&tv_recv, NULL);
     printf("bandwidth:%lu\n", (length * 8 * 1000000) / (tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec));
 #endif
+
     /* recv ioresponse */
     request = ucp_tag_recv_nb(ucp_worker, recv_message, 10,
                               ucp_dt_make_contig(1),
@@ -259,17 +265,13 @@ static void request_init(void *request)
  */
 static void usage()
 {
-    fprintf(stderr, "Usage: ucp_client_server [parameters]\n");
-    fprintf(stderr, "UCP client-server example utility\n");
+    fprintf(stderr, "Usage: ucp_tag_client_read [parameters]\n");
+    fprintf(stderr, "UCP tag_client_read example utility\n");
     fprintf(stderr, "\nParameters are:\n");
     fprintf(stderr, " -a Set IP address of the server "
                     "(required for client and should not be specified "
                     "for the server)\n");
-    fprintf(stderr, " -l Set IP address where server listens "
-                    "(If not specified, server uses INADDR_ANY; "
-                    "Irrelevant at client)\n");
-    fprintf(stderr, " -p Port number to listen/connect to (default = %d). "
-                    "0 on the server side means select a random port and print it\n",
+    fprintf(stderr, " -p Port number to connect to (default = %d). ",
                     DEFAULT_PORT);
     fprintf(stderr, " -f the number of the requests in flight");
     fprintf(stderr, "\n");
@@ -279,7 +281,7 @@ static void usage()
  * Parse the command line arguments.
  */
 static int parse_cmd(int argc, char *const argv[], char **server_addr,
-                     char **listen_addr, int *flight_requests)
+                     int *flight_requests)
 {
     int c = 0;
     int port;
@@ -290,9 +292,6 @@ static int parse_cmd(int argc, char *const argv[], char **server_addr,
         switch (c) {
         case 'a':
             *server_addr = optarg;
-            break;
-        case 'l':
-            *listen_addr = optarg;
             break;
         case 'f':
             *flight_requests = atoi(optarg);
@@ -418,7 +417,6 @@ err:
 int main(int argc, char **argv)
 {
     char *server_addr = NULL;
-    char *listen_addr = NULL;
     int ret;
     int flight_requests = 0;
 
@@ -426,7 +424,7 @@ int main(int argc, char **argv)
     ucp_context_h ucp_context;
     ucp_worker_h  ucp_worker;
 
-    ret = parse_cmd(argc, argv, &server_addr, &listen_addr, &flight_requests);
+    ret = parse_cmd(argc, argv, &server_addr, &flight_requests);
     if (ret != 0) {
         goto err;
     }
