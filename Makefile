@@ -14,11 +14,11 @@ BUILD_FILES=ucp_stream_server.c \
 #export LD_LIBRARY_PATH=${UCX_INSTALL_DIR}/lib/:${LD_LIBRARY_PATH}
 all:${BUILD_FILES}
 	for SOURCE_ENTRY in ${BUILD_FILES}; do \
-		BIN_FILE=`echo $${SOURCE_ENTRY}|awk -F "." '{print $$1}'`; \
+		BIN_FILE=$$(echo $${SOURCE_ENTRY}|awk -F "." '{print $$1}'); \
 		gcc -o $${BIN_FILE} $${SOURCE_ENTRY} -I ${INCLUDE_DIR} -L ${LIB_DIR} ${FLAGS} ${EXTRA_FLAGS}; \
 	done
 clean::
 	for SOURCE_ENTRY in ${BUILD_FILES}; do \
-		BIN_FILE=`echo $${SOURCE_ENTRY}|awk -F "." '{print $$1}'`; \
+		BIN_FILE=$$(echo $${SOURCE_ENTRY}|awk -F "." '{print $$1}'); \
 		rm -f $$(pwd)/$${BIN_FILE}; \
 	done
