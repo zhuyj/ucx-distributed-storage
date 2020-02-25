@@ -26,6 +26,11 @@ The steps to compile and run this ucx distributed storage app:
      |-------------> Client2
    Server <--------> Client1
 
+   |--------| <-------------> Client128
+   | Server | <-------------> ClientN
+   |        | <-------------> Client2
+   |------- | <-------------> Client1
+
    The Server and Clients work very well.
    The followings are the steps:
    Server:
