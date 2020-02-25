@@ -21,10 +21,7 @@ The steps to compile and run this ucx distributed storage app:
 
 8. run this ucx distributed storage app:
 
-   +--------+ <-------------> Client128
-   | Server | <-------------> ClientN
-   |        | <-------------> Client2
-   +------- + <-------------> Client1
+   Server <----------> Client1...128
 
 The Server and Clients work very well.
    The followings are the steps:
@@ -34,6 +31,7 @@ The Server and Clients work very well.
    Client:
 ----------Scripts--Begin-------------
 #!/bin/bash
+
 CLIENT_NUM=128
 while [ 1 ]
 do
