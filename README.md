@@ -16,15 +16,42 @@ The steps to compile and run this ucx distributed storage app:
 
 6. make UCX_INSTALL_DIR=/ucx-install-debug/
 
-7. run this ucx distributed storage app:
+7. run "make" to build release version.
+   run "make debug=1" to build debug version.
 
+8. run this ucx distributed storage app:
+
+     |-------------> Client128
+     |-------------> ClientN
+     |-------------> Client2
    Server <--------> Client1
-   ^   ^^
-   |   ||----------> Client2
-   |   |-----------> ClientN
-   |---------------> Clinet100
 
    The Server and Clients work very well.
+   The followings are the steps:
+   Server:
+   ./ucp_tag_server_read
+
+   Client:
+----------Scripts--Begin-------------
+#!/bin/bash
+CLIENT_NUM=128
+while [ 1 ]
+do
+        for i in `seq 1 ${CLIENT_NUM}`
+        do
+                echo $i
+                (./ucp_tag_client_read -a 1.1.1.5&)
+        done
+        finished=`ps uxww | grep ucp_tag_client_read | grep -v grep`
+        while [ X"$finished" != X"" ]
+        do
+                sleep 1;
+                finished=`ps uxww | grep ucp_tag_client_read | grep -v grep`
+        done
+        sleep 3
+        echo "new tests begin..."
+done
+----------Scripts--End---------------
 
 The stream_send/stream_receive client/server APPs:
 
