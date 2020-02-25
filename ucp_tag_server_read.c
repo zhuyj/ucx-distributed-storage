@@ -136,6 +136,8 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
     return status;
 }
 
+#define IO_RESPONSE    "ioresponse"
+
 /**
  * Send and receive a message using the Tag-Matching API.
  * The client sends a message to the server and waits until the send it
@@ -181,8 +183,12 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
-    snprintf(recv_message, 11, "ioresponse");
-    request = ucp_tag_send_nb(ep, recv_message, 10,
+    /**
+     *  After finishing sending message, send ioresponse message to
+     * the client to indicate the end of sending
+     */
+    snprintf(recv_message, sizeof(IO_RESPONSE), IO_RESPONSE);
+    request = ucp_tag_send_nb(ep, recv_message, strlen(IO_RESPONSE),
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
 
@@ -234,16 +240,13 @@ static void request_init(void *request)
  */
 static void usage()
 {
-    fprintf(stderr, "Usage: ucp_client_server [parameters]\n");
-    fprintf(stderr, "UCP client-server example utility\n");
+    fprintf(stderr, "Usage: ucp_tag_server_read [parameters]\n");
+    fprintf(stderr, "UCP server example utility\n");
     fprintf(stderr, "\nParameters are:\n");
-    fprintf(stderr, " -a Set IP address of the server "
-                    "(required for client and should not be specified "
-                    "for the server)\n");
     fprintf(stderr, " -l Set IP address where server listens "
                     "(If not specified, server uses INADDR_ANY; "
                     "Irrelevant at client)\n");
-    fprintf(stderr, " -p Port number to listen/connect to (default = %d). "
+    fprintf(stderr, " -p Port number to listen to (default = %d). "
                     "0 on the server side means select a random port and print it\n",
                     DEFAULT_PORT);
     fprintf(stderr, " -f the number of the requests in flight");
@@ -253,19 +256,16 @@ static void usage()
 /**
  * Parse the command line arguments.
  */
-static int parse_cmd(int argc, char *const argv[], char **server_addr,
-                     char **listen_addr, int *flight_requests)
+static int parse_cmd(int argc, char *const argv[], char **listen_addr,
+                     int *flight_requests)
 {
     int c = 0;
     int port;
 
     opterr = 0;
 
-    while ((c = getopt(argc, argv, "a:l:p:f:")) != -1) {
+    while ((c = getopt(argc, argv, "l:p:f:")) != -1) {
         switch (c) {
-        case 'a':
-            *server_addr = optarg;
-            break;
         case 'l':
             *listen_addr = optarg;
             break;
@@ -355,7 +355,8 @@ static int init_worker(ucp_context_h ucp_context, ucp_worker_h *ucp_worker)
 
     status = ucp_worker_create(ucp_context, &worker_params, ucp_worker);
     if (status != UCS_OK) {
-        fprintf(stderr, "failed to ucp_worker_create (%s)\n", ucs_status_string(status));
+        fprintf(stderr, "failed to ucp_worker_create (%s)\n",
+                ucs_status_string(status));
         ret = -1;
     }
 
@@ -372,13 +373,29 @@ ucx_server_ctx_t g_context[MAX_THREAD_NUM];
 int              g_count = 0;
 ucp_worker_h     ucp_data_worker[MAX_THREAD_NUM];
 
+/**
+ * The thread work function which is called by the callback function
+ * server_conn_handle_cb. When a request comes, the callback function
+ * will create a thread to handle this request. Then the server continues
+ * to listen on the port.
+ */
 void *handle_client_conn_worker(void *arg)
 {
     ucx_server_ctx_t *context = arg;
     ucp_ep_h         server_ep;
     ucs_status_t     status;
+    int              ret;
 
-    pthread_detach(pthread_self());
+    /**
+     * Detach the thread. Then after the thread is complete,
+     * all the resource related with the thread will be released
+     * to the system.
+    */
+    ret = pthread_detach(pthread_self());
+    if (ret) {
+        fprintf(stderr, "line:%d, pthread_detach error:%d\n", __LINE__, ret);
+        return NULL;
+    }
 
     status = server_create_ep(context->ucp_data_worker, context->conn_request,
                               &server_ep);
@@ -386,6 +403,7 @@ void *handle_client_conn_worker(void *arg)
         return NULL;
     }
 
+    /* The main function to handle the communications. */
     client_server_communication(context->ucp_data_worker, server_ep);
 
     /* Close the endpoint to the peer */
@@ -393,6 +411,7 @@ void *handle_client_conn_worker(void *arg)
 
     return NULL;
 }
+
 /**
  * The callback on the server side which is invoked upon receiving a connection
  * request from the client.
@@ -599,7 +618,6 @@ err:
 
 int main(int argc, char **argv)
 {
-    char *server_addr = NULL;
     char *listen_addr = NULL;
     int ret;
     int flight_requests = 0;
@@ -608,7 +626,7 @@ int main(int argc, char **argv)
     ucp_context_h ucp_context;
     ucp_worker_h  ucp_worker;
 
-    ret = parse_cmd(argc, argv, &server_addr, &listen_addr, &flight_requests);
+    ret = parse_cmd(argc, argv, &listen_addr, &flight_requests);
     if (ret != 0) {
         goto err;
     }
@@ -619,14 +637,12 @@ int main(int argc, char **argv)
         goto err;
     }
 
-    /* Client-Server initialization */
-    if (server_addr == NULL) {
-        /* Server side */
-        ret = run_server(ucp_context, ucp_worker, listen_addr);
-    }
+    /* Server initialization */
+    ret = run_server(ucp_context, ucp_worker, listen_addr);
 
     ucp_worker_destroy(ucp_worker);
     ucp_cleanup(ucp_context);
+
 err:
     return ret;
 }
