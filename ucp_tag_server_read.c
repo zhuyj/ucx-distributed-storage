@@ -136,7 +136,8 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
     return status;
 }
 
-#define IO_RESPONSE    "ioresponse"
+#define IO_RESPONSE        "ioresponse"
+#define IO_RESPONSE_LEN    sizeof(IO_RESPONSE)
 
 /**
  * Send and receive a message using the Tag-Matching API.
@@ -147,7 +148,7 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char recv_message[256] = "";
+    char *recv_message = NULL;
     test_req_t *request;
     ucs_status_t status;
     size_t length;
@@ -172,6 +173,12 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
      * the requested size. The size of the message is equal to the requested
      * size.
      */
+    recv_message = malloc(length + 1);
+    if (!recv_message) {
+        fprintf(stderr, "line:%d, allloc memory fail.\n", __LINE__);
+        return -1;
+    }
+
     request = ucp_tag_send_nb(ep, recv_message, length,
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
@@ -183,11 +190,19 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
+    free(recv_message);
+
     /**
      *  After finishing sending message, send ioresponse message to
      * the client to indicate the end of sending
      */
-    snprintf(recv_message, sizeof(IO_RESPONSE), IO_RESPONSE);
+    recv_message = malloc(IO_RESPONSE_LEN);
+    if (!recv_message) {
+        fprintf(stderr, "line:%d, allloc memory fail.\n", __LINE__);
+        return -1;
+    }
+
+    snprintf(recv_message, IO_RESPONSE_LEN, IO_RESPONSE);
     request = ucp_tag_send_nb(ep, recv_message, strlen(IO_RESPONSE),
                               ucp_dt_make_contig(1), TAG,
                               send_cb);
@@ -198,6 +213,9 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
                 ucs_status_string(status));
         return -1;
     }
+
+    free(recv_message);
+    recv_message = NULL;
 
     return 0;
 }
