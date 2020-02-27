@@ -370,7 +370,7 @@ static ucs_status_t server_create_ep(ucp_worker_h data_worker,
 #define    MAX_THREAD_NUM    32
 
 ucx_server_ctx_t g_context[MAX_THREAD_NUM];
-int              g_count = 0;
+int              g_count = 0, g_error=0;
 ucp_worker_h     ucp_data_worker[MAX_THREAD_NUM];
 
 /**
@@ -393,6 +393,7 @@ void *handle_client_conn_worker(void *arg)
     */
     ret = pthread_detach(pthread_self());
     if (ret) {
+        g_error = ret;
         fprintf(stderr, "line:%d, pthread_detach error:%d\n", __LINE__, ret);
         return NULL;
     }
@@ -400,6 +401,7 @@ void *handle_client_conn_worker(void *arg)
     status = server_create_ep(context->ucp_data_worker, context->conn_request,
                               &server_ep);
     if (status != UCS_OK) {
+        g_error = -1;
         return NULL;
     }
 
@@ -430,8 +432,10 @@ static void server_conn_handle_cb(ucp_conn_request_h conn_request, void *arg)
         g_context[g_count] = *context;
         ret = pthread_create(&ntid, NULL, handle_client_conn_worker,
                              &g_context[g_count]);
-        if (ret != 0)
+        if (ret != 0) {
             fprintf(stderr, "can't create thread: %s\n", strerror(ret));
+            g_error = -2;
+        }
 
         context->conn_request = NULL;
 
@@ -563,7 +567,12 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
          * If there are multiple clients for which the server's connection request
          * callback is involked, i.e. several clients are trying to connect in
          * parallel, the server will handle only the first one and reject the rest */
-            ucp_worker_progress(ucp_worker);
+        ucp_worker_progress(ucp_worker);
+
+        if (g_error != 0) {
+             fprintf(stderr, "create thread or ep error %d\n", g_error);
+             break;
+        }
     }
 
     ucp_listener_destroy(context.listener);
