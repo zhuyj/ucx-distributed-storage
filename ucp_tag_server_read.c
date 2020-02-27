@@ -369,9 +369,9 @@ static ucs_status_t server_create_ep(ucp_worker_h data_worker,
 
 #define    MAX_THREAD_NUM    32
 
+ucp_context_h    ucp_context;
 ucx_server_ctx_t g_context[MAX_THREAD_NUM];
 int              g_count = 0, g_error=0;
-ucp_worker_h     ucp_data_worker[MAX_THREAD_NUM];
 
 /**
  * The thread work function which is called by the callback function
@@ -385,6 +385,7 @@ void *handle_client_conn_worker(void *arg)
     ucp_ep_h         server_ep;
     ucs_status_t     status;
     int              ret;
+    ucp_worker_h     ucp_data_worker;
 
     /**
      * Detach the thread. Then after the thread is complete,
@@ -398,19 +399,26 @@ void *handle_client_conn_worker(void *arg)
         return NULL;
     }
 
-    status = server_create_ep(context->ucp_data_worker, context->conn_request,
+    ret = init_worker(ucp_context, &ucp_data_worker);
+    if (ret != 0) {
+        g_error = -3;
+        return NULL;
+    }
+
+    status = server_create_ep(ucp_data_worker, context->conn_request,
                               &server_ep);
     if (status != UCS_OK) {
         g_error = -1;
+        ucp_worker_destroy(ucp_data_worker);
         return NULL;
     }
 
     /* The main function to handle the communications. */
-    client_server_communication(context->ucp_data_worker, server_ep);
+    client_server_communication(ucp_data_worker, server_ep);
 
     /* Close the endpoint to the peer */
-    ep_close(context->ucp_data_worker, server_ep);
-
+    ep_close(ucp_data_worker, server_ep);
+    ucp_worker_destroy(ucp_data_worker);
     return NULL;
 }
 
@@ -428,7 +436,6 @@ static void server_conn_handle_cb(ucp_conn_request_h conn_request, void *arg)
         int          ret;
 
         context->conn_request = conn_request;
-        context->ucp_data_worker = ucp_data_worker[g_count];
         g_context[g_count] = *context;
         ret = pthread_create(&ntid, NULL, handle_client_conn_worker,
                              &g_context[g_count]);
@@ -534,19 +541,7 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
 {
     ucx_server_ctx_t context;
     ucs_status_t     status;
-    int              ret, i, j;
-
-    for (i=0; i<MAX_THREAD_NUM; i++) {
-        /* Create a data worker (to be used for data exchange between the server
-         * and the client after the connection between them was established) */
-        ret = init_worker(ucp_context, &ucp_data_worker[i]);
-        if (ret != 0) {
-            for (j=0; j<i; j++)
-                ucp_worker_destroy(ucp_data_worker[j]);
-
-            goto err;
-        }
-    }
+    int              ret;
 
     /* Initialiaze the server's context. */
     context.conn_request = NULL;
@@ -558,7 +553,7 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
     status = start_server(ucp_worker, &context, &context.listener, listen_addr);
     if (status != UCS_OK) {
         ret = -1;
-        goto err_worker;
+        goto err;
     }
 
     /* Server is always up listening */
@@ -576,10 +571,6 @@ static int run_server(ucp_context_h ucp_context, ucp_worker_h ucp_worker,
     }
 
     ucp_listener_destroy(context.listener);
-
-err_worker:
-    for (j=0; j<MAX_THREAD_NUM; j++)
-        ucp_worker_destroy(ucp_data_worker[j]);
 
 err:
     return ret;
@@ -632,7 +623,6 @@ int main(int argc, char **argv)
     int flight_requests = 0;
 
     /* UCP objects */
-    ucp_context_h ucp_context;
     ucp_worker_h  ucp_worker;
 
     ret = parse_cmd(argc, argv, &listen_addr, &flight_requests);
