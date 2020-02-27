@@ -163,9 +163,9 @@ static void tag_recv_cb(void *request, ucs_status_t status,
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char recv_message[256 * 1024] = "";
+    char recv_message[256] = "";
     test_req_t *request;
-    size_t length = 256 * 1024;
+    size_t length = 255;
     ucs_status_t status;
 #ifdef UCX_DEBUG
     struct timeval tv_begin, tv_end;

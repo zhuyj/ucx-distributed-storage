@@ -147,7 +147,7 @@ static ucs_status_t request_wait(ucp_worker_h ucp_worker, test_req_t *request)
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char recv_message[256 * 1024] = "";
+    char recv_message[256] = "";
     test_req_t *request;
     ucs_status_t status;
     size_t length;
