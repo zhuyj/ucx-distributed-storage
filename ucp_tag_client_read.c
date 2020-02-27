@@ -155,6 +155,8 @@ static void tag_recv_cb(void *request, ucs_status_t status,
 #endif
 }
 
+#define IO_RESPONSE_LEN    10
+
 /**
  * Send and receive a message using the Tag-Matching API.
  * The client sends a message to the server and waits until the send it
@@ -163,9 +165,9 @@ static void tag_recv_cb(void *request, ucs_status_t status,
  */
 static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
 {
-    char recv_message[256 * 1024] = "";
+    char *recv_message = NULL;
     test_req_t *request;
-    size_t length = 256 * 1024;
+    size_t length = 256;
     ucs_status_t status;
 #ifdef UCX_DEBUG
     struct timeval tv_begin, tv_end;
@@ -191,6 +193,11 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     }
 
     /* recv the message with the request length */
+    recv_message = malloc(length + 1);
+    if (!recv_message) {
+        fprintf(stderr, "line:%d, alloc memory fail\n", __LINE__);
+        return -1;
+    }
     request = ucp_tag_recv_nb(ucp_worker, recv_message, length,
                               ucp_dt_make_contig(1),
                               TAG, 0, tag_recv_cb);
@@ -202,13 +209,22 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
         return -1;
     }
 
+    free(recv_message);
+    recv_message = NULL;
+
 #ifdef UCX_DEBUG
     gettimeofday(&tv_recv, NULL);
     printf("bandwidth:%lu\n", (length * 8 * 1000000) / (tv_recv.tv_sec * 1000000 + tv_recv.tv_usec - tv_send.tv_sec * 1000000 - tv_send.tv_usec));
 #endif
 
     /* recv ioresponse */
-    request = ucp_tag_recv_nb(ucp_worker, recv_message, 10,
+    recv_message = malloc(IO_RESPONSE_LEN + 1);
+    if (!recv_message) {
+        fprintf(stderr, "line:%d, alloc memory fail\n", __LINE__);
+        return -1;
+    }
+ 
+    request = ucp_tag_recv_nb(ucp_worker, recv_message, IO_RESPONSE_LEN,
                               ucp_dt_make_contig(1),
                               TAG, 0, tag_recv_cb);
 
@@ -224,6 +240,10 @@ static int send_recv_tag(ucp_worker_h ucp_worker, ucp_ep_h ep)
     printf("line:%d, the diff is %lu\n", __LINE__, tv_end.tv_sec * 1000000 + tv_end.tv_usec - tv_begin.tv_sec * 1000000 - tv_begin.tv_usec);
     printf("recv_message:%s\n", recv_message);
 #endif
+
+    free(recv_message);
+    recv_message = NULL;
+
     return 0;
 }
 
