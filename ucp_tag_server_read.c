@@ -385,7 +385,7 @@ static ucs_status_t server_create_ep(ucp_worker_h data_worker,
                                      ucp_conn_request_h conn_request,
                                      ucp_ep_h *server_ep);
 
-#define    MAX_THREAD_NUM    32
+#define    MAX_THREAD_NUM    64
 
 ucp_context_h    ucp_context;
 ucx_server_ctx_t g_context[MAX_THREAD_NUM];

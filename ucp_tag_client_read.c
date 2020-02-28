@@ -41,8 +41,8 @@ static void send_cb(void *request, ucs_status_t status)
  */
 static void err_cb(void *arg, ucp_ep_h ep, ucs_status_t status)
 {
-    printf("error handling callback was invoked with status %d (%s)\n",
-           status, ucs_status_string(status));
+    fprintf(stderr,"error handling callback was invoked with status %d (%s)\n",
+            status, ucs_status_string(status));
 }
 
 /**
